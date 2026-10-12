@@ -9,6 +9,8 @@ const SCOPES = 'https://www.googleapis.com/auth/meetings.space.created https://w
 const API = 'https://meet.googleapis.com/v2/';
 // Your OAuth Client ID. It is public by design (Google shows it in every sign-in URL), so it is safe to keep in the code.
 const DEFAULT_CLIENT_ID = '754163086387-47868o8lni1hfipha1tnm1r7bh94bgnv.apps.googleusercontent.com';
+// Pull the bare ID out of whatever was typed or pasted (strips https://, spaces, quotes, line breaks).
+const cleanClientId = v => { const m = String(v || '').match(/\d+-[a-z0-9]+\.apps\.googleusercontent\.com/i); return m ? m[0].toLowerCase() : ''; };
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -110,7 +112,7 @@ let S;
 try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) { S = null; }
 if (!S || S.v !== 1) S = fresh();
 S.settings = { ...fresh().settings, ...S.settings, controls: { ...DEFAULT_CONTROLS, ...(S.settings || {}).controls } };
-if (!/^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/.test(S.settings.clientId || '')) S.settings.clientId = DEFAULT_CLIENT_ID;
+S.settings.clientId = cleanClientId(S.settings.clientId) || DEFAULT_CLIENT_ID;
 let saveFailed = false;
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); saveFailed = false; }
@@ -252,7 +254,7 @@ const G = {
     await this.loadLib();
     return new Promise((res, rej) => {
       const client = google.accounts.oauth2.initTokenClient({
-        client_id: S.settings.clientId.trim(), scope: SCOPES,
+        client_id: cleanClientId(S.settings.clientId) || DEFAULT_CLIENT_ID, scope: SCOPES,
         callback: r => {
           if (r.error) return rej(new AppError('Google sign-in did not finish: ' + (r.error_description || r.error)));
           if (!google.accounts.oauth2.hasGrantedAllScopes(r, ...SCOPES.split(' '))) return rej(new AppError('Please allow both Google Meet permissions so the app can create meetings and see who joined.'));
@@ -1189,7 +1191,7 @@ document.addEventListener('input', e => {
   if (t.dataset.draft && U.draft) U.draft[t.dataset.draft] = t.value;
   if (t.id === 'share-text') { U.shareText = t.value; const wa = $('#wa-link'); if (wa) wa.href = 'https://wa.me/?text=' + encodeURIComponent(t.value); }
   if (t.id === 'dir-q') { U.dirQ = t.value; $('#dir-list').innerHTML = dirList(); }
-  if (t.dataset.setting === 'clientId') { S.settings.clientId = t.value.trim(); save(); const b = $('[data-act="signin"]'); if (b) b.disabled = !S.settings.clientId; }
+  if (t.dataset.setting === 'clientId') { S.settings.clientId = cleanClientId(t.value) || t.value.trim(); save(); const b = $('[data-act="signin"]'); if (b) b.disabled = !S.settings.clientId; }
 });
 document.addEventListener('change', e => {
   const t = e.target;
