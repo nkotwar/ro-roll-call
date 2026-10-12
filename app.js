@@ -289,19 +289,55 @@ G.restore();
 
 const parseCode = s => { const m = String(s || '').match(/([a-z]{3}-?[a-z]{4}-?[a-z]{3})(?![a-z])/i); if (!m) return ''; const c = m[1].toLowerCase().replace(/-/g, ''); return `${c.slice(0, 3)}-${c.slice(3, 7)}-${c.slice(7)}`; };
 
-async function googleCreate(ctrl) {
-  const config = { accessType: ctrl.access, entryPointAccess: 'ALL' };
-  if (ctrl.moderation) {
+// Settings some Google accounts (e.g. personal Gmail) aren't allowed to change.
+// Google names the blocked field in its error ("updateDefaultJoinAsViewerType is not available"),
+// so we drop just that field, retry, and remember it so the next meeting skips it.
+const CTRL_FIELDS = {
+  defaultJoinAsViewerType: { key: 'viewer', label: 'join as viewers' },
+  chatRestriction: { key: 'chat', label: 'chat limits' },
+  presentRestriction: { key: 'present', label: 'screen-share limits' },
+  reactionRestriction: { key: 'reactions', label: 'reaction limits' },
+  moderation: { key: 'moderation', label: 'host management' },
+  entryPointAccess: { key: 'entry', label: 'entry points' }
+};
+function buildConfig(ctrl, skip) {
+  const config = { accessType: ctrl.access };
+  if (!skip.has('entryPointAccess')) config.entryPointAccess = 'ALL';
+  if (ctrl.moderation && !skip.has('moderation')) {
     config.moderation = 'ON';
-    config.moderationRestrictions = { chatRestriction: ctrl.chat, presentRestriction: ctrl.present, reactionRestriction: ctrl.reactions, defaultJoinAsViewerType: ctrl.viewer ? 'ON' : 'OFF' };
+    const r = {};
+    if (!skip.has('chatRestriction')) r.chatRestriction = ctrl.chat;
+    if (!skip.has('presentRestriction')) r.presentRestriction = ctrl.present;
+    if (!skip.has('reactionRestriction')) r.reactionRestriction = ctrl.reactions;
+    if (ctrl.viewer && !skip.has('defaultJoinAsViewerType')) r.defaultJoinAsViewerType = 'ON';
+    if (Object.keys(r).length) config.moderationRestrictions = r;
   }
-  try {
-    return { space: await G.call('spaces', { method: 'POST', body: { config }, interactive: true }), note: '' };
-  } catch (e) {
-    if (e.code !== 400) throw e;
-    const space = await G.call('spaces', { method: 'POST', body: { config: { accessType: ctrl.access } }, interactive: true });
-    return { space, note: 'Google did not accept the host-control settings for this account, so the meeting was created with ' + accessLabel(ctrl.access) + ' access only. Set chat and presenting from Host controls inside Meet.' };
+  return config;
+}
+function blockedField(msg, skip) {
+  const m = String(msg || '').toLowerCase();
+  return Object.keys(CTRL_FIELDS).find(f => !skip.has(f) && m.includes(f.toLowerCase()));
+}
+async function googleCreate(ctrl) {
+  const skip = new Set(S.settings.unsupported || []);
+  const dropped = [];
+  for (let i = 0; i < 8; i++) {
+    try {
+      const space = await G.call('spaces', { method: 'POST', body: { config: buildConfig(ctrl, skip) }, interactive: true });
+      if (dropped.length) { S.settings.unsupported = [...skip]; save(); }
+      const note = dropped.length ? `Your Google account can't set ${dropped.map(f => CTRL_FIELDS[f].label).join(', ')} from outside Meet, so the meeting was created without ${dropped.length > 1 ? 'them' : 'it'}. Everything else was applied. You can still change ${dropped.length > 1 ? 'these' : 'this'} from Host controls inside Meet.` : '';
+      return { space, note };
+    } catch (e) {
+      if (e.code === 'reauth' || e.code === 'net' || e.code === 'noclient' || e.code === 401) throw e;
+      const f = blockedField(e.message, skip);
+      if (f) { skip.add(f); dropped.push(f); continue; }
+      if (skip.has('__basic')) throw e;
+      // Unknown refusal: fall back to an Open meeting with no extra controls.
+      Object.keys(CTRL_FIELDS).forEach(k => skip.add(k)); skip.add('__basic');
+      dropped.push(...Object.keys(CTRL_FIELDS).filter(k => k !== 'entryPointAccess' && !dropped.includes(k)));
+    }
   }
+  throw new AppError('Google would not create the meeting. Try again in a minute.');
 }
 const accessLabel = a => ({ OPEN: 'Open', TRUSTED: 'Trusted', RESTRICTED: 'Restricted' }[a] || a);
 
@@ -549,11 +585,11 @@ function viewCreate() {
       <label class="setting"><div class="grow"><div class="title">Host management</div><div class="sub">Lets you limit chat, presenting and reactions</div></div><span class="switch"><input type="checkbox" id="c-mod" data-ctrl="moderation" ${c.moderation ? 'checked' : ''}><span></span></span></label>
       ${c.moderation ? `
       <div class="pad" style="display:flex;flex-direction:column;gap:14px">
-        <div class="field"><span class="flabel">Who can send chat</span>${seg('chat', c.chat, [['NO_RESTRICTION', 'Everyone'], ['HOSTS_ONLY', 'Hosts only']])}</div>
-        <div class="field"><span class="flabel">Who can share screen</span>${seg('present', c.present, [['NO_RESTRICTION', 'Everyone'], ['HOSTS_ONLY', 'Hosts only']])}</div>
-        <div class="field"><span class="flabel">Who can send reactions</span>${seg('reactions', c.reactions, [['NO_RESTRICTION', 'Everyone'], ['HOSTS_ONLY', 'Hosts only']])}</div>
+        ${ctrlRow('chatRestriction', `<div class="field"><span class="flabel">Who can send chat</span>${seg('chat', c.chat, [['NO_RESTRICTION', 'Everyone'], ['HOSTS_ONLY', 'Hosts only']])}</div>`)}
+        ${ctrlRow('presentRestriction', `<div class="field"><span class="flabel">Who can share screen</span>${seg('present', c.present, [['NO_RESTRICTION', 'Everyone'], ['HOSTS_ONLY', 'Hosts only']])}</div>`)}
+        ${ctrlRow('reactionRestriction', `<div class="field"><span class="flabel">Who can send reactions</span>${seg('reactions', c.reactions, [['NO_RESTRICTION', 'Everyone'], ['HOSTS_ONLY', 'Hosts only']])}</div>`)}
       </div>
-      <label class="setting"><div class="grow"><div class="title">Join as viewers</div><div class="sub">New joiners can't unmute until a host allows it</div></div><span class="switch"><input type="checkbox" id="c-view" data-ctrl="viewer" ${c.viewer ? 'checked' : ''}><span></span></span></label>` : ''}
+      ${(S.settings.unsupported || []).includes('defaultJoinAsViewerType') ? `<div class="setting"><div class="grow"><div class="title faint">Join as viewers</div><div class="sub">Not available for your Google account. Use Host controls in Meet.</div></div></div>` : `<label class="setting"><div class="grow"><div class="title">Join as viewers</div><div class="sub">New joiners can't unmute until a host allows it</div></div><span class="switch"><input type="checkbox" id="c-view" data-ctrl="viewer" ${c.viewer ? 'checked' : ''}><span></span></span></label>`}` : ''}
     </div>
   </section>
   <p class="hint" style="margin:-4px 2px 0">These become your defaults for the next meeting.</p>`}
@@ -561,6 +597,10 @@ function viewCreate() {
     <button class="btn btn-primary btn-block" data-act="create" id="create-btn">${d.demo ? I.play + 'Start demo' : I.plus + 'Create meeting'}</button>
     ${!d.demo && !S.settings.clientId ? `<p class="hint" style="text-align:center;margin:0">Google isn't connected yet. Add your Client ID in Settings, or start a demo.</p>` : ''}
   </div>`;
+}
+function ctrlRow(field, html) {
+  if (!(S.settings.unsupported || []).includes(field)) return html;
+  return `<div style="opacity:.5;pointer-events:none" aria-disabled="true">${html}</div><span class="hint" style="margin-top:-8px">Not available for your Google account. Use Host controls in Meet.</span>`;
 }
 function shareText(s) {
   const d = s.details; const lines = ['*Video Conference – RO Udaipur*'];
