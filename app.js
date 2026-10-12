@@ -1,0 +1,1225 @@
+/* RO Roll Call — tracks which branches have joined a Google Meet VC.
+   Built by Nitin Kotwar (139535), via PDUDAIRO. Everything is stored on this phone. */
+(() => {
+'use strict';
+
+/* ───────────────────────── constants & helpers ───────────────────────── */
+const KEY = 'rollcall.v1';
+const SCOPES = 'https://www.googleapis.com/auth/meetings.space.created https://www.googleapis.com/auth/meetings.space.readonly';
+const API = 'https://meet.googleapis.com/v2/';
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => Math.random().toString(36).slice(2, 10);
+const now = () => Date.now();
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const svg = (d, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${d}</svg>`;
+const I = {
+  plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  link: svg('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'),
+  play: svg('<path d="M7 5v14l11-7z"/>'),
+  phone: svg('<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>'),
+  more: svg('<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>'),
+  share: svg('<path d="M12 3v13"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>'),
+  copy: svg('<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>'),
+  chat: svg('<path d="M4 20l1.5-4A8 8 0 1 1 9 19.3z"/><path d="M9 10.5c.5 2 2 3.5 4 4l1.2-1.2 2 .8-.4 1.6c-3.6.2-7.6-3.8-7.4-7.4L10 7.9l.8 2z"/>'),
+  ext: svg('<path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>'),
+  check: svg('<path d="m5 12 5 5 9-10"/>'),
+  x: svg('<path d="M6 6l12 12M18 6 6 18"/>'),
+  search: svg('<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/>'),
+  tag: svg('<path d="M3 12V4h8l9 9-8 8z"/><circle cx="7.5" cy="8.5" r="1.3"/>'),
+  back: svg('<path d="M15 5l-7 7 7 7"/>'),
+  chev: svg('<path d="m9 6 6 6-6 6"/>'),
+  refresh: svg('<path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/>'),
+  alert: svg('<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/>'),
+  info: svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>'),
+  shield: svg('<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>'),
+  down: svg('<path d="M12 4v12"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/>'),
+  up: svg('<path d="M12 20V8"/><path d="m7 13 5-5 5 5"/><path d="M5 4h14"/>'),
+  edit: svg('<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13 7 4 4"/>'),
+  trash: svg('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'),
+  user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+  google: svg('<circle cx="12" cy="12" r="9"/><path d="M12 12h8"/>'),
+  clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+  stop: svg('<rect x="6" y="6" width="12" height="12" rx="2"/>'),
+  sliders: svg('<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>')
+};
+
+const fmtTime = t => t ? new Date(t).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '';
+const fmtWhen = t => {
+  if (!t) return '';
+  const d = new Date(t);
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) + ' · ' + fmtTime(d);
+};
+const ago = t => {
+  if (!t) return 'never';
+  const s = Math.max(0, Math.round((now() - t) / 1000));
+  if (s < 5) return 'just now';
+  if (s < 60) return s + 's ago';
+  const m = Math.round(s / 60);
+  if (m < 60) return m + ' min ago';
+  return Math.round(m / 60) + ' h ago';
+};
+const toLocalInput = d => {
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+const nextHalfHour = () => { const d = new Date(); d.setSeconds(0, 0); d.setMinutes(d.getMinutes() < 30 ? 30 : 60); return d; };
+
+const TITLES = new Set(['mr', 'ms', 'mrs', 'miss', 'dr', 'shri', 'smt', 'sh', 'shree']);
+const pretty = n => String(n || '').replace(/\s+\.\s*$/, '').replace(/\./g, ' ').split(/\s+/).filter(w => w && !TITLES.has(w.toLowerCase()))
+  .map(w => w.length <= 2 && w === w.toUpperCase() && w.length > 1 ? w : w[0].toUpperCase() + w.slice(1).toLowerCase()).join(' ').trim() || String(n || '').trim();
+const initials = n => pretty(n).split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+const normKey = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const tel = n => String(n || '').replace(/[^\d+]/g, '');
+
+/* ───────────────────────── store ───────────────────────── */
+const DEFAULT_CONTROLS = { access: 'OPEN', moderation: true, chat: 'NO_RESTRICTION', present: 'HOSTS_ONLY', reactions: 'NO_RESTRICTION', viewer: false };
+
+function unitsFromSource(src) {
+  return (src.units || []).map(u => ({
+    code: u.code, name: u.name, alpha: u.alpha || '', isRO: !!u.isRO, isNew: !!u.isNew, category: u.category || '', size: u.size || '',
+    mobile: u.mobile || '', phone: u.phone || '', expect: u.isRO ? false : true,
+    staff: (u.staff || []).map(s => ({ id: 'E' + s.empId, empId: s.empId, name: s.name, designation: s.designation || '', phone: s.phone || '', bm: !!s.bm, second: !!s.second, dept: s.dept || '' }))
+  }));
+}
+function unitsFromUdairo(D) {
+  return unitsFromSource({
+    units: D.branches.map(b => ({
+      code: b.branchCode, name: b.branchName, alpha: b.alphaCode, isRO: b.size === 'REGIONAL OFFICE', isNew: !!b.isNew, category: b.category, size: b.size,
+      mobile: b.mobile, phone: b.phone && b.phone !== b.mobile ? b.phone : '',
+      staff: b.staff.map(s => ({ empId: s.empId, name: s.name, designation: s.designation, phone: s.phone, bm: s.designation === 'Branch Manager', second: !!s.secondInCommand, dept: (s.departments || []).join(' / ') }))
+    }))
+  });
+}
+function fresh() {
+  return {
+    v: 1,
+    units: window.SEED_DATA ? unitsFromSource(window.SEED_DATA) : [],
+    idents: {},
+    session: null,
+    settings: { clientId: '', controls: { ...DEFAULT_CONTROLS }, poll: 15, keepAwake: true, signedIn: false },
+    recentAgendas: [],
+    backup: { at: null, dirty: 0 }
+  };
+}
+let S;
+try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) { S = null; }
+if (!S || S.v !== 1) S = fresh();
+S.settings = { ...fresh().settings, ...S.settings, controls: { ...DEFAULT_CONTROLS, ...(S.settings || {}).controls } };
+let saveFailed = false;
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); saveFailed = false; }
+  catch (e) { if (!saveFailed) toast('Could not save on this phone. Export a backup now.'); saveFailed = true; }
+}
+
+let personById = new Map(), unitByCode = new Map();
+function reindex() {
+  personById = new Map(); unitByCode = new Map();
+  for (const u of S.units) { unitByCode.set(u.code, u); for (const p of u.staff) personById.set(p.id, { ...p, unit: u.code, ref: p }); }
+}
+reindex();
+
+const unitLabel = u => u ? (u.isRO ? 'Regional Office' : u.name) : '';
+const unitOf = target => {
+  if (!target) return null;
+  if (target.u != null) return unitByCode.get(target.u) || null;
+  const p = personById.get(target.p);
+  return p ? unitByCode.get(p.unit) : null;
+};
+const targetFor = key => (S.session && S.session.temp && S.session.temp[key]) || (S.idents[key] && S.idents[key].to) || null;
+const targetLabel = t => {
+  if (!t) return '';
+  if (t.u != null) { const u = unitByCode.get(t.u); return u ? (u.isRO ? 'Regional Office' : u.name + ' branch') : 'Unknown'; }
+  const p = personById.get(t.p); return p ? pretty(p.name) : 'Unknown person';
+};
+function markDirty() { S.backup.dirty = (S.backup.dirty || 0) + 1; }
+
+/* ───────────────────────── name matching ───────────────────────── */
+const NOISE = new Set(['cbi', 'central', 'bank', 'of', 'india', 'branch', 'br', 'phone', 'iphone', 'android', 'galaxy', 'redmi', 'samsung', 'vivo', 'oppo', 'realme', 'poco', 'mi', 'the', 's', 'sir', 'ji', 'mobile', 'laptop', 'pc']);
+const toks = s => String(s || '').toLowerCase().replace(/'s\b/g, '').replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t && !TITLES.has(t));
+function lev(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 9;
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+function scorePerson(dt, p) {
+  const pt = toks(p.name).filter(t => t.length);
+  if (!pt.length || !dt.length) return 0;
+  let score = 0; const used = new Set();
+  for (const d of dt) {
+    if (/^\d+$/.test(d)) { if (+d === p.empId) score += 4; continue; }
+    let best = 0, bi = -1;
+    pt.forEach((t, i) => {
+      if (used.has(i)) return;
+      let s = 0;
+      if (d === t) s = 3;
+      else if (d.length === 1 && t[0] === d) s = 1.2;
+      else if (d.length >= 3 && (t.startsWith(d) || d.startsWith(t))) s = 2;
+      else if (d.length >= 4 && lev(d, t) <= 1) s = 2.2;
+      if (s > best) { best = s; bi = i; }
+    });
+    if (bi >= 0) { used.add(bi); score += best; }
+    else if (d.length > 1) score -= 0.7;
+  }
+  if (dt.includes(pt[pt.length - 1])) score += 0.5;
+  return score / (3 * Math.max(pt.length, Math.min(dt.length, 4)));
+}
+function suggest(displayName) {
+  const dt = toks(displayName).filter(t => !NOISE.has(t));
+  const all = toks(displayName);
+  const out = [];
+  for (const p of personById.values()) {
+    const s = scorePerson(dt, p);
+    if (s > 0.22) out.push({ t: { p: p.id }, score: s });
+  }
+  for (const u of S.units) {
+    const ut = toks(u.name);
+    const hit = ut.length && ut.every(t => all.includes(t)) || (u.alpha && all.includes(u.alpha.toLowerCase())) || all.includes(String(u.code));
+    if (hit) out.push({ t: { u: u.code }, score: 0.6 + (all.includes('cbi') || all.includes('branch') ? 0.2 : 0) });
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, 4);
+}
+
+/* ───────────────────────── session model ───────────────────────── */
+function expectedDefault() { return S.units.filter(u => u.expect).map(u => u.code); }
+function newSession(fields) {
+  return {
+    id: uid(), source: 'google', spaceName: '', meetingUri: '', meetingCode: '',
+    details: { when: '', agenda: '', headedBy: '' }, expected: expectedDefault(),
+    records: [], parts: {}, temp: {}, ignored: {}, called: {}, state: 'waiting', ended: false,
+    lastSync: null, error: null, createdAt: now(), controlsNote: '', ...fields
+  };
+}
+function board() {
+  const s = S.session; if (!s) return null;
+  const parts = Object.values(s.parts);
+  const byUnit = new Map(); const untagged = []; const people = [];
+  for (const p of parts) {
+    const t = targetFor(p.key);
+    if (!t) { if (!s.ignored[p.key]) untagged.push(p); people.push({ p, t: null, u: null }); continue; }
+    const u = unitOf(t);
+    people.push({ p, t, u });
+    if (!u) continue;
+    if (!byUnit.has(u.code)) byUnit.set(u.code, []);
+    byUnit.get(u.code).push({ p, t });
+  }
+  const rows = { in: [], left: [], miss: [] };
+  const exp = new Set(s.expected);
+  const consider = new Set([...exp, ...byUnit.keys()]);
+  for (const code of consider) {
+    const u = unitByCode.get(code); if (!u) continue;
+    const list = byUnit.get(code) || [];
+    const active = list.filter(x => x.p.active);
+    const status = active.length ? 'in' : list.length ? 'left' : 'miss';
+    const lastLeft = list.reduce((m, x) => Math.max(m, x.p.lastEnd ? Date.parse(x.p.lastEnd) : 0), 0);
+    rows[status].push({ u, list, active, expected: exp.has(code), lastLeft });
+  }
+  const e = rows.in.filter(r => r.expected).length, l = rows.left.filter(r => r.expected).length;
+  rows.in.sort((a, b) => (b.expected - a.expected) || (a.u.isRO - b.u.isRO) || a.u.name.localeCompare(b.u.name));
+  rows.left.sort((a, b) => b.lastLeft - a.lastLeft);
+  rows.miss.sort((a, b) => ((s.called[a.u.code] ? 1 : 0) - (s.called[b.u.code] ? 1 : 0)) || a.u.name.localeCompare(b.u.name));
+  people.sort((a, b) => (b.p.active - a.p.active) || String(a.p.name).localeCompare(String(b.p.name)));
+  return { rows, untagged, people, total: exp.size, joined: e + l, inCount: e, leftCount: l, missCount: rows.miss.length };
+}
+
+/* ───────────────────────── Google: auth + Meet API ───────────────────────── */
+class AppError extends Error { constructor(msg, code) { super(msg); this.code = code; } }
+const G = {
+  token: null, exp: 0,
+  restore() { try { const t = JSON.parse(sessionStorage.getItem('rc.tok')); if (t && t.exp > now() + 60000) { this.token = t.token; this.exp = t.exp; } } catch (e) {} },
+  loadLib() {
+    if (window.google && google.accounts && google.accounts.oauth2) return Promise.resolve();
+    return new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
+      s.onload = () => res(); s.onerror = () => rej(new AppError('Could not reach Google sign-in. Check your internet connection.'));
+      document.head.appendChild(s);
+    });
+  },
+  valid() { return this.token && now() < this.exp - 60000; },
+  async getToken(interactive) {
+    if (this.valid()) return this.token;
+    if (!S.settings.clientId) throw new AppError('Add your Google Client ID in Settings first.', 'noclient');
+    if (!interactive) throw new AppError('Google sign-in has expired. Tap Reconnect.', 'reauth');
+    await this.loadLib();
+    return new Promise((res, rej) => {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: S.settings.clientId.trim(), scope: SCOPES,
+        callback: r => {
+          if (r.error) return rej(new AppError('Google sign-in did not finish: ' + (r.error_description || r.error)));
+          if (!google.accounts.oauth2.hasGrantedAllScopes(r, ...SCOPES.split(' '))) return rej(new AppError('Please allow both Google Meet permissions so the app can create meetings and see who joined.'));
+          this.token = r.access_token; this.exp = now() + (r.expires_in || 3600) * 1000;
+          try { sessionStorage.setItem('rc.tok', JSON.stringify({ token: this.token, exp: this.exp })); } catch (e) {}
+          S.settings.signedIn = true; save();
+          res(this.token);
+        },
+        error_callback: e => rej(new AppError(e && e.type === 'popup_closed' ? 'The Google sign-in window was closed.' : 'Google sign-in was blocked. Allow pop-ups for this app and try again.'))
+      });
+      client.requestAccessToken({ prompt: S.settings.signedIn ? '' : 'consent' });
+    });
+  },
+  signOut() {
+    if (this.token && window.google && google.accounts) try { google.accounts.oauth2.revoke(this.token, () => {}); } catch (e) {}
+    this.token = null; this.exp = 0; S.settings.signedIn = false; save();
+    try { sessionStorage.removeItem('rc.tok'); } catch (e) {}
+  },
+  async call(path, { method = 'GET', body, interactive = false } = {}) {
+    const tok = await this.getToken(interactive);
+    let r;
+    try {
+      r = await fetch(API + path, { method, headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    } catch (e) { throw new AppError('No connection to Google. Retrying shortly.', 'net'); }
+    if (r.status === 401) { this.token = null; throw new AppError('Google sign-in has expired. Tap Reconnect.', 'reauth'); }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new AppError((j.error && j.error.message) || ('Google returned an error (' + r.status + ').'), r.status);
+    return j;
+  }
+};
+G.restore();
+
+const parseCode = s => { const m = String(s || '').match(/([a-z]{3}-?[a-z]{4}-?[a-z]{3})(?![a-z])/i); if (!m) return ''; const c = m[1].toLowerCase().replace(/-/g, ''); return `${c.slice(0, 3)}-${c.slice(3, 7)}-${c.slice(7)}`; };
+
+async function googleCreate(ctrl) {
+  const config = { accessType: ctrl.access, entryPointAccess: 'ALL' };
+  if (ctrl.moderation) {
+    config.moderation = 'ON';
+    config.moderationRestrictions = { chatRestriction: ctrl.chat, presentRestriction: ctrl.present, reactionRestriction: ctrl.reactions, defaultJoinAsViewerType: ctrl.viewer ? 'ON' : 'OFF' };
+  }
+  try {
+    return { space: await G.call('spaces', { method: 'POST', body: { config }, interactive: true }), note: '' };
+  } catch (e) {
+    if (e.code !== 400) throw e;
+    const space = await G.call('spaces', { method: 'POST', body: { config: { accessType: ctrl.access } }, interactive: true });
+    return { space, note: 'Google did not accept the host-control settings for this account, so the meeting was created with ' + accessLabel(ctrl.access) + ' access only. Set chat and presenting from Host controls inside Meet.' };
+  }
+}
+const accessLabel = a => ({ OPEN: 'Open', TRUSTED: 'Trusted', RESTRICTED: 'Restricted' }[a] || a);
+
+function participantFromApi(p) {
+  let key, name, kind;
+  if (p.signedinUser) { name = p.signedinUser.displayName || 'Google user'; key = 'g:' + p.signedinUser.user; kind = 'google'; }
+  else if (p.anonymousUser) { name = p.anonymousUser.displayName || 'Guest'; key = 'n:' + normKey(name); kind = 'guest'; }
+  else { name = (p.phoneUser && p.phoneUser.displayName) || 'Phone caller'; key = 't:' + normKey(name); kind = 'phone'; }
+  return { key, name, kind, first: p.earliestStartTime || null, lastEnd: p.latestEndTime || null, pid: p.name };
+}
+async function listAll(path) {
+  const out = []; let tok = '';
+  for (let i = 0; i < 20; i++) {
+    const j = await G.call(path + (path.includes('?') ? '&' : '?') + 'pageSize=250' + (tok ? '&pageToken=' + encodeURIComponent(tok) : ''));
+    out.push(...(j.participants || []));
+    if (!j.nextPageToken) break; tok = j.nextPageToken;
+  }
+  return out;
+}
+async function syncGoogle(s) {
+  const space = await G.call(s.spaceName);
+  let rec = space.activeConference && space.activeConference.conferenceRecord;
+  let ended = false;
+  if (!rec) {
+    const filter = encodeURIComponent(`space.name="${space.name}"`);
+    const j = await G.call(`conferenceRecords?filter=${filter}&pageSize=10`);
+    const recs = (j.conferenceRecords || []).filter(r => Date.parse(r.startTime) >= s.createdAt - 12 * 3600e3 || s.attached)
+      .sort((a, b) => Date.parse(b.startTime) - Date.parse(a.startTime));
+    if (recs[0]) { rec = recs[0].name; ended = !!recs[0].endTime; }
+  }
+  if (!rec) { s.state = 'waiting'; return; }
+  if (!s.records.includes(rec)) s.records.push(rec);
+  const all = await listAll(rec + '/participants');
+  let activeIds = null;
+  if (!ended) {
+    try { activeIds = new Set((await listAll(rec + '/participants?filter=' + encodeURIComponent('latest_end_time IS NULL'))).map(p => p.name)); }
+    catch (e) { if (e.code === 'reauth') throw e; activeIds = null; }
+  }
+  const seen = {};
+  for (const raw of all) {
+    const p = participantFromApi(raw);
+    p.active = !ended && (activeIds ? activeIds.has(raw.name) : !raw.latestEndTime);
+    const prev = seen[p.key];
+    if (prev) { prev.active = prev.active || p.active; if (p.first && (!prev.first || p.first < prev.first)) prev.first = p.first; if (p.lastEnd && (!prev.lastEnd || p.lastEnd > prev.lastEnd)) prev.lastEnd = p.lastEnd; }
+    else seen[p.key] = p;
+  }
+  mergeParts(s, seen, rec);
+  s.ended = ended; s.state = ended ? 'ended' : 'live';
+}
+function mergeParts(s, seen, rec) {
+  // Participants from an earlier conference in the same meeting space stay (they joined, then left).
+  for (const k in s.parts) if (!seen[k] && s.parts[k].rec !== rec) s.parts[k].active = false;
+  for (const k in seen) {
+    const old = s.parts[k];
+    const p = { ...seen[k], rec };
+    if (!old) { p.isNew = true; s.parts[k] = p; continue; }
+    p.first = old.first && old.first < p.first ? old.first : p.first;
+    p.isNew = !old.active && p.active;
+    s.parts[k] = p;
+  }
+}
+
+/* ───────────────────────── demo meeting ───────────────────────── */
+function demoName(p, variant) {
+  const t = pretty(p.name).split(' ');
+  const first = t[0], last = t[t.length - 1];
+  switch (variant) {
+    case 0: return pretty(p.name);
+    case 1: return t.length > 1 ? t.slice(0, -1).map(w => w[0]).join(' ') + ' ' + last : first;
+    case 2: return first + ' ' + (t.length > 1 ? last : '') + ' CBI';
+    case 3: return first.toUpperCase();
+    default: return first + "'s Galaxy";
+  }
+}
+function startDemo(details, expected) {
+  const s = newSession({ source: 'demo', meetingCode: 'dmo-demo-vcx', meetingUri: 'https://meet.google.com/dmo-demo-vcx', details, expected, state: 'live', demo: { tick: 0, plan: [] } });
+  const plan = [];
+  const self = personById.get('E139535');
+  if (self) plan.push({ at: 0, key: 'g:demo-self', name: pretty(self.name), kind: 'google' });
+  let at = 1;
+  for (const code of expected) {
+    const u = unitByCode.get(code); if (!u || Math.random() < 0.3) continue;
+    const staff = u.staff.slice().sort((a, b) => (b.bm - a.bm) || (b.second - a.second));
+    const who = [staff[0]]; if (staff[1] && Math.random() < 0.3) who.push(staff[1]);
+    for (const p of who) {
+      const v = Math.floor(Math.random() * 5);
+      const kindR = Math.random();
+      const kind = kindR < 0.75 ? 'google' : kindR < 0.9 ? 'guest' : 'phone';
+      const name = kind === 'phone' ? '+91 ' + String(p.phone || '9800000000').slice(0, 5) + ' ••' + String(p.phone || '00').slice(-3) : demoName(p, v);
+      const key = kind === 'google' ? 'g:demo-' + p.empId + '-' + v : (kind === 'guest' ? 'n:' : 't:') + normKey(name);
+      const join = at + Math.floor(Math.random() * 6);
+      plan.push({ at: join, key, name, kind });
+      if (Math.random() < 0.18) plan.push({ at: join + 3 + Math.floor(Math.random() * 6), key, leave: true });
+    }
+    if (Math.random() < 0.5) at++;
+  }
+  const branchAcct = unitByCode.get(expected[Math.floor(Math.random() * expected.length)]);
+  if (branchAcct && !branchAcct.isRO) plan.push({ at: 3, key: 'n:' + normKey('CBI ' + branchAcct.name), name: 'CBI ' + branchAcct.name, kind: 'guest' });
+  s.demo.plan = plan;
+  return s;
+}
+function syncDemo(s) {
+  const t = s.demo.tick++;
+  const seen = {};
+  for (const k in s.parts) seen[k] = { ...s.parts[k] };
+  for (const ev of s.demo.plan.filter(e => e.at === t)) {
+    if (ev.leave) { if (seen[ev.key]) { seen[ev.key].active = false; seen[ev.key].lastEnd = new Date().toISOString(); } continue; }
+    seen[ev.key] = { key: ev.key, name: ev.name, kind: ev.kind, first: new Date().toISOString(), lastEnd: null, active: true };
+  }
+  mergeParts(s, seen, 'demo');
+  s.state = 'live';
+}
+
+/* ───────────────────────── sync loop ───────────────────────── */
+let syncTimer = null, syncing = false;
+function scheduleSync(delay) {
+  clearTimeout(syncTimer);
+  const s = S.session;
+  if (!s || s.ended) return;
+  const d = delay != null ? delay : (s.source === 'demo' ? 4000 : Math.max(10, S.settings.poll) * 1000);
+  syncTimer = setTimeout(syncNow, d);
+}
+async function syncNow() {
+  const s = S.session; if (!s || syncing) return;
+  if (document.hidden && s.source !== 'demo') { scheduleSync(); return; }
+  syncing = true;
+  const before = new Set(Object.values(s.parts).filter(p => p.active).map(p => p.key));
+  try {
+    if (s.source === 'demo') syncDemo(s); else await syncGoogle(s);
+    s.error = null; s.lastSync = now();
+  } catch (e) {
+    s.error = { msg: e.message, code: e.code };
+  }
+  syncing = false;
+  if (S.session !== s) return;
+  const fresh = Object.values(s.parts).filter(p => p.active && !before.has(p.key));
+  if (fresh.length) {
+    try { navigator.vibrate && navigator.vibrate(fresh.some(p => targetFor(p.key)) ? 25 : [20, 60, 20]); } catch (e) {}
+    U.flash = new Set(fresh.map(p => p.key));
+  }
+  save();
+  if (U.tab === 'meet' && !U.route) renderMain();
+  if (!(s.error && s.error.code === 'reauth')) scheduleSync(s.error && s.error.code === 'net' ? 20000 : null);
+}
+
+/* ───────────────────────── UI state ───────────────────────── */
+const U = { tab: 'meet', route: null, boardTab: 'miss', dirQ: '', dirFilter: 'branches', flash: new Set(), draft: null, wake: null };
+
+function setTab(t) { U.tab = t; U.route = null; render(); window.scrollTo(0, 0); }
+function go(route) { U.route = route; render(); window.scrollTo(0, 0); }
+
+function render() {
+  $$('.tab').forEach(b => b.setAttribute('aria-current', b.dataset.tab === U.tab ? 'page' : 'false'));
+  renderMain();
+  manageWake();
+}
+function renderTop(title, { back = false, actions = '' } = {}) {
+  $('#top').innerHTML = `${back ? `<button class="back" data-act="back" aria-label="Back">${I.back}</button>` : ''}<h1>${esc(title)}</h1>${actions}`;
+}
+function renderMain() {
+  const m = $('#main');
+  const r = U.route;
+  let html = '';
+  if (r && r.name === 'create') html = viewCreate();
+  else if (r && r.name === 'share') html = viewShare();
+  else if (r && r.name === 'unit') html = viewUnit(r.code);
+  else if (U.tab === 'meet') html = S.session ? viewBoard() : viewHome();
+  else if (U.tab === 'dir') html = viewDirectory();
+  else html = viewSettings();
+  m.innerHTML = html;
+  if (U.flash.size) setTimeout(() => U.flash.clear(), 1300);
+  afterRender();
+}
+function afterRender() {
+  const q = $('#dir-q'); if (q && U.focusSearch) { q.focus(); U.focusSearch = false; }
+}
+
+/* ───────────────────────── views: home ───────────────────────── */
+function viewHome() {
+  renderTop('RO Roll Call');
+  const ready = !!S.settings.clientId;
+  const nUnits = S.units.filter(u => u.expect).length;
+  if (!S.units.length) return `
+    <section class="card hero">
+      <h2>Load your branch list</h2>
+      <p>Import <span class="mono">udairo.js</span> to add the branches and staff of Udaipur RO. It stays on this phone.</p>
+      <button class="btn btn-primary btn-block" data-act="import">${I.up}Import udairo.js</button>
+    </section>`;
+  return `
+    <section class="card hero">
+      <div class="row"><span class="chip acc">${esc(S.units.filter(u => !u.isRO).length)} branches · ${esc(personById.size)} staff</span></div>
+      <h2>Start a VC and see which branches are in</h2>
+      <p>Create the Meet link here, share it on WhatsApp with the time and agenda, then watch ${nUnits} branches check in.</p>
+      <div class="actions">
+        <button class="btn btn-primary btn-block" data-act="open-create">${I.plus}Create meeting</button>
+        <button class="btn btn-soft btn-block" data-act="open-attach">${I.link}Track an existing meeting</button>
+        <button class="btn btn-ghost btn-block" data-act="open-create" data-demo="1">${I.play}Try a demo meeting</button>
+      </div>
+    </section>
+    ${ready ? '' : `<div class="banner info">${I.info}<div><b>Google is not connected yet.</b> Demo meetings work now. To create real meetings, add your Client ID in <button class="btn-link" data-act="tab" data-tab="settings" style="border:0;background:none;padding:0;color:var(--accent);font-weight:600">Settings</button>.</div></div>`}
+    ${backupNudge()}`;
+}
+function backupNudge() {
+  if ((S.backup.dirty || 0) < 5) return '';
+  return `<div class="banner warn">${I.shield}<div class="grow"><b>${S.backup.dirty} changes since your last backup.</b> Save a copy so a phone reset doesn't lose your tags.<div style="margin-top:8px"><button class="btn btn-ghost" data-act="export" data-kind="full" style="min-height:38px;padding:8px 12px">${I.down}Save backup</button></div></div></div>`;
+}
+
+/* ───────────────────────── views: create + share ───────────────────────── */
+function draftDefault(demo) {
+  return { demo: !!demo, when: toLocalInput(nextHalfHour()), agenda: '', headedBy: '', expected: expectedDefault(), controls: { ...S.settings.controls } };
+}
+function headPicks() {
+  const ro = S.units.find(u => u.isRO); if (!ro) return [];
+  return ro.staff.filter(p => /Regional Head|Chief Manager/i.test(p.designation)).map(p => `${pretty(p.name)}, ${p.designation.replace(' - HCM', '')}`);
+}
+function seg(name, value, opts) {
+  return `<div class="seg" role="group">${opts.map(([v, l]) => `<button type="button" aria-pressed="${v === value}" data-act="draft-set" data-k="${name}" data-v="${v}">${esc(l)}</button>`).join('')}</div>`;
+}
+function viewCreate() {
+  const d = U.draft;
+  renderTop(d.demo ? 'Demo meeting' : 'New meeting', { back: true });
+  const c = d.controls;
+  const agendas = (S.recentAgendas || []).slice(0, 6);
+  const exp = d.expected.length;
+  const roIn = d.expected.some(code => unitByCode.get(code)?.isRO);
+  return `
+  <form id="create-form" class="card pad" style="display:flex;flex-direction:column;gap:16px" autocomplete="off">
+    ${d.demo ? `<div class="banner info">${I.play}<div>A demo meeting simulates branches joining every few seconds, so you can practise tagging. Nothing is sent to Google.</div></div>` : ''}
+    <div class="field"><label for="f-when">Time of VC</label><input class="input" type="datetime-local" id="f-when" value="${esc(d.when)}" data-draft="when" required></div>
+    <div class="field"><label for="f-agenda">Agenda</label><textarea class="input" id="f-agenda" data-draft="agenda" rows="2" placeholder="e.g. Q2 RAC review and NPA recovery targets">${esc(d.agenda)}</textarea>
+      ${agendas.length ? `<div class="picks">${agendas.map(a => `<button type="button" class="pick" data-act="draft-pick" data-k="agenda" data-v="${esc(a)}">${esc(a.length > 34 ? a.slice(0, 32) + '…' : a)}</button>`).join('')}</div>` : ''}</div>
+    <div class="field"><label for="f-head">Headed by</label><input class="input" id="f-head" data-draft="headedBy" value="${esc(d.headedBy)}" placeholder="Name and designation">
+      <div class="picks">${headPicks().map(h => `<button type="button" class="pick" aria-pressed="${h === d.headedBy}" data-act="draft-pick" data-k="headedBy" data-v="${esc(h)}">${esc(h)}</button>`).join('')}</div></div>
+    <div class="field"><span class="flabel">Who should attend</span>
+      <button type="button" class="sug" data-act="pick-expected"><div class="grow"><div class="title">${exp - (roIn ? 1 : 0)} branches${roIn ? ' + RO staff' : ''}</div><div class="sub">Missing branches will show in the call list</div></div>${I.chev}</button></div>
+  </form>
+  ${d.demo ? '' : `
+  <div class="sec-label">Host controls</div>
+  <section class="card">
+    <div class="pad" style="display:flex;flex-direction:column;gap:14px">
+      <div class="field"><span class="flabel">Meeting access</span>${seg('access', c.access, [['OPEN', 'Open'], ['TRUSTED', 'Trusted'], ['RESTRICTED', 'Restricted']])}
+        <span class="hint">${{ OPEN: 'Anyone with the link joins without asking to be let in.', TRUSTED: 'Your organisation joins directly; others ask to join.', RESTRICTED: 'Only invited people join directly; others ask.' }[c.access]}</span></div>
+    </div>
+    <div class="list">
+      <label class="setting"><div class="grow"><div class="title">Host management</div><div class="sub">Lets you limit chat, presenting and reactions</div></div><span class="switch"><input type="checkbox" id="c-mod" data-ctrl="moderation" ${c.moderation ? 'checked' : ''}><span></span></span></label>
+      ${c.moderation ? `
+      <div class="pad" style="display:flex;flex-direction:column;gap:14px">
+        <div class="field"><span class="flabel">Who can send chat</span>${seg('chat', c.chat, [['NO_RESTRICTION', 'Everyone'], ['HOSTS_ONLY', 'Hosts only']])}</div>
+        <div class="field"><span class="flabel">Who can share screen</span>${seg('present', c.present, [['NO_RESTRICTION', 'Everyone'], ['HOSTS_ONLY', 'Hosts only']])}</div>
+        <div class="field"><span class="flabel">Who can send reactions</span>${seg('reactions', c.reactions, [['NO_RESTRICTION', 'Everyone'], ['HOSTS_ONLY', 'Hosts only']])}</div>
+      </div>
+      <label class="setting"><div class="grow"><div class="title">Join as viewers</div><div class="sub">New joiners can't unmute until a host allows it</div></div><span class="switch"><input type="checkbox" id="c-view" data-ctrl="viewer" ${c.viewer ? 'checked' : ''}><span></span></span></label>` : ''}
+    </div>
+  </section>
+  <p class="hint" style="margin:-4px 2px 0">These become your defaults for the next meeting.</p>`}
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <button class="btn btn-primary btn-block" data-act="create" id="create-btn">${d.demo ? I.play + 'Start demo' : I.plus + 'Create meeting'}</button>
+    ${!d.demo && !S.settings.clientId ? `<p class="hint" style="text-align:center;margin:0">Google isn't connected yet. Add your Client ID in Settings, or start a demo.</p>` : ''}
+  </div>`;
+}
+function shareText(s) {
+  const d = s.details; const lines = ['*Video Conference – RO Udaipur*'];
+  if (d.when) lines.push('🕚 ' + fmtWhen(d.when));
+  if (d.headedBy) lines.push('👤 Headed by: ' + d.headedBy);
+  if (d.agenda) lines.push('📋 Agenda: ' + d.agenda);
+  lines.push('🔗 Join: ' + s.meetingUri);
+  return lines.join('\n');
+}
+function viewShare() {
+  const s = S.session;
+  renderTop('Share meeting', { back: true });
+  if (!s) return '';
+  if (U.shareText == null) U.shareText = shareText(s);
+  return `
+  <section class="card pad" style="display:flex;flex-direction:column;gap:12px">
+    <div class="row"><span class="chip in"><span class="dot"></span>Meeting ready</span><span class="mono muted">${esc(s.meetingCode)}</span></div>
+    ${s.controlsNote ? `<div class="banner warn">${I.alert}<div>${esc(s.controlsNote)}</div></div>` : ''}
+    <div class="field"><label for="share-text">Message</label><textarea class="input" id="share-text" rows="6" data-share>${esc(U.shareText)}</textarea><span class="hint">Edit anything before sending.</span></div>
+    <div class="share-grid">
+      <button class="btn btn-primary" data-act="share-native">${I.share}Share…</button>
+      <a class="btn btn-soft" id="wa-link" href="https://wa.me/?text=${encodeURIComponent(U.shareText)}" target="_blank" rel="noopener">${I.chat}WhatsApp</a>
+      <button class="btn btn-ghost" data-act="copy-share">${I.copy}Copy</button>
+      <a class="btn btn-ghost" href="${esc(s.meetingUri)}" target="_blank" rel="noopener">${I.ext}Open Meet</a>
+    </div>
+  </section>
+  <button class="btn btn-primary btn-block" data-act="to-board">Go to live board</button>`;
+}
+
+/* ───────────────────────── views: live board ───────────────────────── */
+function ring(joined, total) {
+  const r = 40, c = 2 * Math.PI * r, f = total ? joined / total : 0;
+  return `<div class="ring" role="img" aria-label="${joined} of ${total} branches joined"><svg viewBox="0 0 92 92"><circle cx="46" cy="46" r="${r}" fill="none" stroke-width="8" style="stroke:var(--surface-2)"/><circle cx="46" cy="46" r="${r}" fill="none" stroke-width="8" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${f ? c * (1 - f) : c}" style="stroke:var(--in);transition:stroke-dashoffset .6s"/></svg><div class="num"><b>${joined}/${total}</b><span>branches</span></div></div>`;
+}
+function syncLine(s) {
+  if (s.error) {
+    const re = s.error.code === 'reauth' || s.error.code === 'noclient';
+    return `<div class="banner ${re ? 'warn' : 'err'}">${I.alert}<div class="grow">${esc(s.error.msg)}${re ? `<div style="margin-top:8px"><button class="btn btn-ghost" data-act="reconnect" style="min-height:38px;padding:8px 12px">${I.refresh}Reconnect</button></div>` : ''}</div></div>`;
+  }
+  const label = s.ended ? `<span class="chip">Meeting ended</span>` : s.state === 'waiting' ? `<span class="chip acc"><span class="dot pulse"></span>Waiting for the first person</span>` : `<span class="chip in"><span class="dot pulse"></span>Live</span>`;
+  return `<div class="syncbar">${label}<span>Updated <span data-ago="${s.lastSync || ''}">${ago(s.lastSync)}</span></span><span class="grow"></span><button class="icon-btn" data-act="sync" aria-label="Refresh now" style="width:34px;height:34px">${I.refresh}</button></div>`;
+}
+function personChips(list, onlyActive) {
+  return list.filter(x => !onlyActive || x.p.active).map(x => {
+    const lbl = x.t.p ? pretty(personById.get(x.t.p)?.name || x.p.name) : x.p.name;
+    return `<button class="chip ${x.p.active ? 'in' : 'left'}" data-act="tag" data-key="${esc(x.p.key)}" style="border:0">${esc(lbl)}</button>`;
+  }).join('');
+}
+function bmOf(u) { return u.staff.find(p => p.bm) || u.staff[0]; }
+function callNumber(u) { return u.mobile || u.phone || (bmOf(u) && bmOf(u).phone) || ''; }
+function viewBoard() {
+  const s = S.session, b = board();
+  renderTop(s.source === 'demo' ? 'Demo meeting' : 'Live board', { actions: `<button class="icon-btn" data-act="go-share" aria-label="Share meeting">${I.share}</button><button class="icon-btn" data-act="session-menu" aria-label="Meeting options">${I.more}</button>` });
+  const d = s.details;
+  const tabs = [['miss', 'Not joined', b.missCount], ['left', 'Joined & left', b.rows.left.length], ['in', 'In meeting', b.rows.in.length], ['people', 'People', b.people.length]];
+  let list = '';
+  if (U.boardTab === 'miss') {
+    list = b.rows.miss.length ? b.rows.miss.map(r => {
+      const u = r.u, bm = bmOf(u), num = callNumber(u), called = s.called[u.code];
+      return `<div class="item"><span class="stripe miss"></span><div class="grow"><div class="row" style="gap:8px"><span class="code">${u.code}</span><span class="title ellipsis">${esc(unitLabel(u))}</span></div>
+        <div class="sub ellipsis">${bm ? esc(pretty(bm.name)) : 'No staff listed'}</div>${called ? `<div class="called">${I.check.replace('<svg', '<svg style="width:13px;height:13px;vertical-align:-2px"')} Called ${ago(called)}</div>` : ''}</div>
+        <button class="icon-btn" data-act="call-sheet" data-code="${u.code}" aria-label="More numbers for ${esc(u.name)}">${I.more}</button>
+        ${num ? `<a class="call-btn" href="tel:${tel(num)}" data-act="called" data-code="${u.code}">${I.phone}Call</a>` : ''}</div>`;
+    }).join('') : `<div class="empty"><b>Everyone expected has joined</b>All ${b.total} branches have been in the meeting.</div>`;
+  } else if (U.boardTab === 'left') {
+    list = b.rows.left.length ? b.rows.left.map(r => {
+      const u = r.u;
+      return `<div class="item"><span class="stripe left"></span><div class="grow"><div class="row" style="gap:8px"><span class="code">${u.code}</span><span class="title ellipsis">${esc(unitLabel(u))}</span></div>
+        <div class="sub">Left at ${fmtTime(r.lastLeft)} · knows about the meeting</div><div class="people-inline">${personChips(r.list)}</div></div>
+        <button class="icon-btn" data-act="call-sheet" data-code="${u.code}" aria-label="Numbers for ${esc(u.name)}">${I.phone}</button></div>`;
+    }).join('') : `<div class="empty"><b>No one has left yet</b>Branches whose people join and then drop off will appear here.</div>`;
+  } else if (U.boardTab === 'in') {
+    list = b.rows.in.length ? b.rows.in.map(r => {
+      const u = r.u, fl = r.list.some(x => U.flash.has(x.p.key));
+      return `<div class="item ${fl ? 'flash' : ''}"><span class="stripe in"></span><div class="grow"><div class="row" style="gap:8px"><span class="code">${u.code}</span><span class="title ellipsis">${esc(unitLabel(u))}</span>${r.expected ? '' : '<span class="chip">not expected</span>'}</div>
+        <div class="people-inline">${personChips(r.list)}</div></div></div>`;
+    }).join('') : `<div class="empty"><b>No branch has joined yet</b>${s.state === 'waiting' ? 'The board fills in as soon as people enter the meeting.' : 'Tag the people who joined to see their branches here.'}</div>`;
+  } else {
+    list = b.people.length ? b.people.map(({ p, t, u }) => {
+      const fl = U.flash.has(p.key);
+      return `<button class="item tap ${fl ? 'flash' : ''}" data-act="tag" data-key="${esc(p.key)}"><span class="avatar ${p.kind === 'google' ? 'g' : ''}">${esc(initials(p.name) || '?')}</span><div class="grow"><div class="title ellipsis">${esc(p.name)}</div>
+        <div class="sub ellipsis">${t ? esc(targetLabel(t)) + (u && t.p ? ' · ' + esc(unitLabel(u)) : '') : s.ignored[p.key] ? 'Ignored' : '<span style="color:var(--accent);font-weight:600">Tap to tag</span>'}</div></div>
+        <span class="chip ${p.active ? 'in' : 'left'}">${p.active ? 'In' : 'Left ' + fmtTime(p.lastEnd)}</span></button>`;
+    }).join('') : `<div class="empty"><b>Nobody has joined yet</b>People appear here the moment they enter the meeting.</div>`;
+  }
+  return `
+  <section class="card meet-head">
+    <div class="meet-meta">
+      <div class="row" style="gap:8px;flex-wrap:wrap"><span class="mono muted" style="font-size:13px">${esc(s.meetingCode)}</span>${d.when ? `<span class="faint">·</span><span class="sub">${esc(fmtWhen(d.when))}</span>` : ''}</div>
+      ${d.agenda ? `<div class="agenda">${esc(d.agenda)}</div>` : ''}
+      ${d.headedBy ? `<div class="sub">Headed by ${esc(d.headedBy)}</div>` : ''}
+    </div>
+    <div class="score">${ring(b.joined, b.total)}
+      <div class="tallies"><div class="tally in"><b>${b.inCount}</b><span>In now</span></div><div class="tally left"><b>${b.leftCount}</b><span>Left</span></div><div class="tally miss"><b>${b.missCount}</b><span>Not joined</span></div></div>
+    </div>
+    ${syncLine(s)}
+  </section>
+  ${b.untagged.length ? `<section class="card untagged"><div class="row"><span class="title grow">${b.untagged.length} ${b.untagged.length === 1 ? 'person needs' : 'people need'} a tag</span><span class="sub">tap to match</span></div>
+    <div class="untagged-list">${b.untagged.map(p => `<button class="u-pill" data-act="tag" data-key="${esc(p.key)}">${I.tag}${esc(p.name)}</button>`).join('')}</div></section>` : ''}
+  <div class="board-tabs"><div class="seg" role="tablist">${tabs.map(([k, l, n]) => `<button role="tab" aria-pressed="${U.boardTab === k}" data-act="board-tab" data-k="${k}">${l} <span class="mono" style="opacity:.7">${n}</span></button>`).join('')}</div></div>
+  <section class="card list">${list}</section>`;
+}
+
+/* ───────────────────────── views: directory ───────────────────────── */
+function viewDirectory() {
+  renderTop('Directory', { actions: `<button class="icon-btn" data-act="add-person" aria-label="Add person">${I.plus}</button>` });
+  return `
+  <div class="search-wrap">${I.search}<input class="input" id="dir-q" type="search" placeholder="Search branch, name, code or emp ID" value="${esc(U.dirQ)}" autocomplete="off"></div>
+  <div class="seg" role="group">${[['branches', 'Branches'], ['ro', 'RO staff'], ['linked', 'Linked accounts']].map(([k, l]) => `<button aria-pressed="${U.dirFilter === k}" data-act="dir-filter" data-k="${k}">${l}</button>`).join('')}</div>
+  <section class="card list" id="dir-list">${dirList()}</section>`;
+}
+function linkedCount(personIdOrUnit) {
+  let n = 0; for (const k in S.idents) { const t = S.idents[k].to; if (t.p === personIdOrUnit || t.u === personIdOrUnit) n++; } return n;
+}
+function dirList() {
+  const q = U.dirQ.trim().toLowerCase();
+  if (U.dirFilter === 'linked') {
+    const rows = Object.entries(S.idents).filter(([k, v]) => !q || (v.name + ' ' + targetLabel(v.to)).toLowerCase().includes(q)).sort((a, b) => (b[1].at || 0) - (a[1].at || 0));
+    if (!rows.length) return `<div class="empty"><b>No linked accounts yet</b>When you tag someone in a meeting, their Google account is remembered here.</div>`;
+    return rows.map(([k, v]) => { const u = unitOf(v.to); return `<button class="item tap" data-act="tag" data-key="${esc(k)}" data-mode="relink"><span class="avatar ${k.startsWith('g:') ? 'g' : ''}">${esc(initials(v.name) || '?')}</span><div class="grow"><div class="title ellipsis">${esc(v.name)}</div><div class="sub ellipsis">${esc(targetLabel(v.to))}${u && v.to.p ? ' · ' + esc(unitLabel(u)) : ''}</div></div><span class="chip">${k.startsWith('g:') ? 'Google' : k.startsWith('t:') ? 'Phone' : 'Name'}</span></button>`; }).join('');
+  }
+  if (U.dirFilter === 'ro') {
+    const ro = S.units.find(u => u.isRO); if (!ro) return `<div class="empty">No Regional Office in the directory.</div>`;
+    const staff = ro.staff.filter(p => !q || (p.name + ' ' + p.designation + ' ' + p.dept + ' ' + p.empId).toLowerCase().includes(q));
+    return staff.map(p => personRow(p)).join('') || `<div class="empty">No RO staff match “${esc(U.dirQ)}”.</div>`;
+  }
+  const units = S.units.filter(u => !u.isRO);
+  if (q) {
+    const hitsU = units.filter(u => (u.name + ' ' + u.code + ' ' + u.alpha).toLowerCase().includes(q));
+    const hitsP = [...personById.values()].filter(p => !unitByCode.get(p.unit)?.isRO && (p.name + ' ' + p.empId + ' ' + p.designation).toLowerCase().includes(q)).slice(0, 30);
+    return (hitsU.map(unitRow).join('') + hitsP.map(p => personRow(p.ref, unitByCode.get(p.unit))).join('')) || `<div class="empty">Nothing matches “${esc(U.dirQ)}”.</div>`;
+  }
+  return units.slice().sort((a, b) => a.name.localeCompare(b.name)).map(unitRow).join('');
+}
+function unitRow(u) {
+  const n = u.staff.reduce((a, p) => a + linkedCount(p.id), 0) + linkedCount(u.code);
+  return `<button class="item tap" data-act="open-unit" data-code="${u.code}"><span class="code">${u.code}</span><div class="grow"><div class="title ellipsis">${esc(u.name)}${u.isNew ? ' <span class="chip acc" style="margin-left:4px">New</span>' : ''}</div><div class="sub">${u.staff.length} staff · ${n} linked${u.expect ? '' : ' · not expected'}</div></div>${I.chev.replace('<svg', '<svg style="width:18px;height:18px;color:var(--faint)"')}</button>`;
+}
+function personRow(p, u) {
+  const n = linkedCount(p.id);
+  return `<button class="item tap" data-act="edit-person" data-id="${esc(p.id)}"><span class="avatar">${esc(initials(p.name))}</span><div class="grow"><div class="title ellipsis">${esc(pretty(p.name))}</div><div class="sub ellipsis">${esc(p.designation)}${p.dept ? ' · ' + esc(p.dept) : ''}${u ? ' · ' + esc(u.name) : ''}</div></div>${n ? `<span class="chip acc">${n} linked</span>` : ''}${p.bm ? '<span class="chip">BM</span>' : p.second ? '<span class="chip">2nd</span>' : ''}</button>`;
+}
+function viewUnit(code) {
+  const u = unitByCode.get(code);
+  if (!u) { U.route = null; return viewDirectory(); }
+  renderTop(unitLabel(u), { back: true, actions: `<button class="icon-btn" data-act="edit-unit" data-code="${u.code}" aria-label="Edit branch">${I.edit}</button>` });
+  const linkedUnit = Object.entries(S.idents).filter(([, v]) => v.to.u === u.code);
+  return `
+  <section class="card pad" style="display:flex;flex-direction:column;gap:12px">
+    <div class="row" style="gap:8px;flex-wrap:wrap"><span class="code">${u.code}</span><span class="mono muted">${esc(u.alpha)}</span>${u.category ? `<span class="chip">${esc(u.category.toLowerCase())}</span>` : ''}${u.isNew ? '<span class="chip acc">New branch</span>' : ''}</div>
+    <dl class="kv"><dt>Branch mobile</dt><dd class="mono">${u.mobile ? esc(u.mobile) : '<span class="faint">Not set</span>'}</dd><dt>Landline</dt><dd class="mono">${u.phone ? esc(u.phone) : '<span class="faint">Not set</span>'}</dd><dt>In meetings</dt><dd>${u.expect ? 'Expected by default' : 'Not expected by default'}</dd></dl>
+  </section>
+  <div class="row" style="margin:6px 2px -4px"><span class="sec-label grow" style="margin:0">Staff · ${u.staff.length}</span><button class="btn btn-soft" style="min-height:36px;padding:6px 12px" data-act="add-person" data-code="${u.code}">${I.plus}Add</button></div>
+  <section class="card list">${u.staff.map(p => personRow(p)).join('') || '<div class="empty">No staff listed.</div>'}</section>
+  ${linkedUnit.length ? `<div class="sec-label">Accounts linked to the whole ${u.isRO ? 'office' : 'branch'}</div><section class="card list">${linkedUnit.map(([k, v]) => `<button class="item tap" data-act="tag" data-key="${esc(k)}" data-mode="relink"><span class="avatar">${esc(initials(v.name))}</span><div class="grow"><div class="title">${esc(v.name)}</div><div class="sub">Tap to change or unlink</div></div></button>`).join('')}</section>` : ''}`;
+}
+
+/* ───────────────────────── views: settings ───────────────────────── */
+let persisted = null;
+async function checkPersist() { try { persisted = navigator.storage && navigator.storage.persisted ? await navigator.storage.persisted() : null; } catch (e) { persisted = null; } }
+async function requestPersist(silent) {
+  try {
+    if (navigator.storage && navigator.storage.persist) { persisted = await navigator.storage.persist(); if (!silent) toast(persisted ? 'Storage protected on this phone' : 'Your browser declined. Install the app to the home screen, then try again.'); }
+    else if (!silent) toast('This browser does not support protected storage.');
+  } catch (e) { if (!silent) toast('Could not protect storage.'); }
+  if (U.tab === 'settings') renderMain();
+}
+function viewSettings() {
+  renderTop('Settings');
+  const st = S.settings, c = st.controls;
+  const signed = G.valid() || st.signedIn;
+  return `
+  <div class="sec-label">Google account</div>
+  <section class="card pad" style="display:flex;flex-direction:column;gap:12px">
+    <div class="field"><label for="s-client">OAuth Client ID</label><input class="input mono" id="s-client" style="font-size:13px" value="${esc(st.clientId)}" placeholder="1234-abc.apps.googleusercontent.com" data-setting="clientId" spellcheck="false" autocapitalize="off"><span class="hint">From your Google Cloud project. See SETUP.md for the steps.</span></div>
+    <div class="row">
+      <div class="grow"><div class="title">${signed ? 'Connected' : 'Not connected'}</div><div class="sub">${signed ? 'Meet access granted on this phone' : 'Sign in once to create and track meetings'}</div></div>
+      ${signed ? `<button class="btn btn-ghost" data-act="signout">Disconnect</button>` : `<button class="btn btn-primary" data-act="signin" ${st.clientId ? '' : 'disabled'}>${I.google}Connect</button>`}
+    </div>
+  </section>
+
+  <div class="sec-label">During meetings</div>
+  <section class="card list">
+    <div class="setting"><div class="grow"><div class="title">Check for joiners every</div><div class="sub">Shorter is faster but uses more data</div></div>
+      <select class="input" style="width:auto;min-height:40px;padding:6px 10px" data-setting="poll">${[10, 15, 30, 60].map(n => `<option value="${n}" ${+st.poll === n ? 'selected' : ''}>${n} sec</option>`).join('')}</select></div>
+    <label class="setting"><div class="grow"><div class="title">Keep screen on</div><div class="sub">While the live board is open</div></div><span class="switch"><input type="checkbox" data-setting="keepAwake" ${st.keepAwake ? 'checked' : ''}><span></span></span></label>
+    <div class="setting"><div class="grow"><div class="title">Default host controls</div><div class="sub">${accessLabel(c.access)} access${c.moderation ? ` · chat ${c.chat === 'HOSTS_ONLY' ? 'hosts only' : 'everyone'} · screen share ${c.present === 'HOSTS_ONLY' ? 'hosts only' : 'everyone'}` : ' · host management off'}</div></div></div>
+  </section>
+
+  <div class="sec-label">Data on this phone</div>
+  <section class="card list">
+    <div class="setting">${I.shield.replace('<svg', '<svg style="width:22px;height:22px;color:' + (persisted ? 'var(--in)' : 'var(--faint)') + '"')}<div class="grow"><div class="title">${persisted ? 'Storage protected' : 'Storage not protected'}</div><div class="sub">${persisted ? 'The browser won\'t clear your tags to free space.' : 'Allow it so the browser never clears your tags to free space.'}</div></div>${persisted ? '' : `<button class="btn btn-soft" data-act="persist">Allow</button>`}</div>
+    <div class="setting"><div class="grow"><div class="title">Backup</div><div class="sub">${S.backup.at ? 'Last saved ' + ago(S.backup.at) : 'Never saved'}${S.backup.dirty ? ' · ' + S.backup.dirty + ' changes since' : ''}</div></div></div>
+    <div class="pad" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-top:0">
+      <button class="btn btn-soft" data-act="export" data-kind="full">${I.down}Full backup</button>
+      <button class="btn btn-soft" data-act="export" data-kind="map">${I.down}Mappings only</button>
+      <button class="btn btn-ghost" data-act="import" style="grid-column:1/-1">${I.up}Import backup, mappings or udairo.js</button>
+    </div>
+    <div class="setting"><div class="grow"><div class="title">${Object.keys(S.idents).length} linked accounts</div><div class="sub">${S.units.length} offices · ${personById.size} staff</div></div><button class="btn btn-danger" data-act="clear-maps" ${Object.keys(S.idents).length ? '' : 'disabled'}>Clear</button></div>
+    ${window.SEED_DATA ? `<div class="setting"><div class="grow"><div class="title">Reset directory</div><div class="sub">Restore the built-in branch and staff list. Your tags stay.</div></div><button class="btn btn-ghost" data-act="reset-dir">Reset</button></div>` : ''}
+  </section>
+  <p class="hint" style="text-align:center;margin:8px 0 0">RO Roll Call · built by Nitin Kotwar (139535), via PDUDAIRO</p>`;
+}
+
+/* ───────────────────────── sheets ───────────────────────── */
+let sheetClose = null;
+function openSheet(html, { onClose } = {}) {
+  closeSheet(true);
+  const layer = $('#layer');
+  layer.innerHTML = `<div class="scrim" data-act="sheet-close"></div><div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div>`;
+  requestAnimationFrame(() => { $('.scrim', layer).classList.add('show'); $('.sheet', layer).classList.add('show'); });
+  sheetClose = onClose || null;
+  document.body.style.overflow = 'hidden';
+}
+function closeSheet(instant) {
+  const layer = $('#layer'); if (!layer.firstChild) return;
+  const cb = sheetClose; sheetClose = null;
+  document.body.style.overflow = '';
+  if (instant) { layer.innerHTML = ''; return; }
+  $('.scrim', layer)?.classList.remove('show'); $('.sheet', layer)?.classList.remove('show');
+  setTimeout(() => { if (!$('.sheet.show', layer)) layer.innerHTML = ''; }, 260);
+  cb && cb();
+}
+function confirmSheet(title, body, ok = 'Confirm', danger = false) {
+  return new Promise(res => {
+    let done = false; const fin = v => { if (done) return; done = true; res(v); };
+    openSheet(`<div class="sheet-head"><h3 class="grow">${esc(title)}</h3></div><div class="sheet-body"><p style="margin:0" class="muted">${body}</p></div>
+      <div class="sheet-foot"><button class="btn btn-ghost" style="flex:1" id="cf-no">Cancel</button><button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" style="flex:1" id="cf-ok">${esc(ok)}</button></div>`, { onClose: () => fin(false) });
+    $('#cf-no').onclick = () => closeSheet();
+    $('#cf-ok').onclick = () => { fin(true); closeSheet(); };
+  });
+}
+
+/* Tag sheet */
+function openTag(key, mode) {
+  const s = S.session;
+  const part = s && s.parts[key];
+  const ident = S.idents[key];
+  const name = part ? part.name : ident ? ident.name : key;
+  const kind = part ? part.kind : key.startsWith('g:') ? 'google' : key.startsWith('t:') ? 'phone' : 'guest';
+  const cur = targetFor(key);
+  const sugg = suggest(name);
+  const kindLabel = { google: 'Signed-in Google account', guest: 'Guest — matched by display name', phone: 'Phone dial-in — matched by number shown' }[kind];
+  const rememberDefault = mode === 'relink' ? true : !(s && s.temp[key]);
+  openSheet(`
+    <div class="sheet-head"><span class="avatar ${kind === 'google' ? 'g' : ''}">${esc(initials(name) || '?')}</span><div class="grow"><h3>${esc(name)}</h3><div class="sub">${esc(kindLabel)}${part ? ' · ' + (part.active ? 'in the meeting' : 'left ' + fmtTime(part.lastEnd)) : ''}</div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
+    <div class="sheet-body">
+      ${cur ? `<div class="banner info">${I.tag}<div class="grow">Tagged as <b>${esc(targetLabel(cur))}</b>${cur.p ? ' · ' + esc(unitLabel(unitOf(cur))) : ''}</div></div>` : ''}
+      ${sugg.length ? `<div class="flabel">Suggested</div><div class="results">${sugg.map((x, i) => pickRow(x.t, i === 0 && x.score >= 0.4)).join('')}</div>` : ''}
+      <div class="search-wrap">${I.search}<input class="input" id="tag-q" type="search" placeholder="Search staff, branch or emp ID" autocomplete="off"></div>
+      <div class="results" id="tag-results"></div>
+      ${s && mode !== 'relink' ? `<label class="setting" style="padding:4px 0"><div class="grow"><div class="title">Remember for future meetings</div><div class="sub">${kind === 'google' ? 'Recognise this Google account automatically next time' : 'Recognise this display name automatically next time'}</div></div><span class="switch"><input type="checkbox" id="tag-remember" ${rememberDefault ? 'checked' : ''}><span></span></span></label>` : ''}
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        ${cur ? `<button class="btn btn-danger" style="flex:1" data-act="untag">${I.x}Remove tag</button>` : ''}
+        ${s && part && !cur ? `<button class="btn btn-ghost" style="flex:1" data-act="ignore">${s.ignored[key] ? 'Stop ignoring' : 'Not from a branch'}</button>` : ''}
+      </div>
+    </div>`);
+  const sheet = $('.sheet');
+  sheet.dataset.key = key; sheet.dataset.mode = mode || '';
+  const q = $('#tag-q');
+  const run = () => { $('#tag-results').innerHTML = searchTargets(q.value).map(t => pickRow(t)).join(''); };
+  q.addEventListener('input', run);
+}
+function pickRow(t, best) {
+  if (t.u != null) {
+    const u = unitByCode.get(t.u);
+    return `<button class="sug ${best ? 'best' : ''}" data-act="assign" data-u="${t.u}"><span class="code">${t.u}</span><div class="grow"><div class="title">${esc(unitLabel(u))}</div><div class="sub">Whole ${u.isRO ? 'office' : 'branch'} account</div></div>${best ? '<span class="chip acc">Best match</span>' : ''}</button>`;
+  }
+  const p = personById.get(t.p); const u = unitByCode.get(p.unit);
+  return `<button class="sug ${best ? 'best' : ''}" data-act="assign" data-p="${esc(p.id)}"><span class="avatar">${esc(initials(p.name))}</span><div class="grow"><div class="title ellipsis">${esc(pretty(p.name))}</div><div class="sub ellipsis">${esc(unitLabel(u))} · ${esc(p.designation)}${p.dept ? ' · ' + esc(p.dept) : ''}</div></div>${best ? '<span class="chip acc">Best match</span>' : ''}</button>`;
+}
+function searchTargets(q) {
+  q = q.trim().toLowerCase(); if (!q) return [];
+  const out = [];
+  for (const u of S.units) if ((u.name + ' ' + u.code + ' ' + u.alpha + (u.isRO ? ' regional office ro' : '')).toLowerCase().includes(q)) out.push({ u: u.code });
+  for (const p of personById.values()) if ((p.name + ' ' + p.empId + ' ' + p.designation + ' ' + p.dept + ' ' + (unitByCode.get(p.unit)?.name || '')).toLowerCase().includes(q)) out.push({ p: p.id });
+  return out.slice(0, 25);
+}
+function assign(key, target, remember) {
+  const s = S.session;
+  const prevIdent = S.idents[key] ? JSON.parse(JSON.stringify(S.idents[key])) : null;
+  const prevTemp = s && s.temp[key] ? { ...s.temp[key] } : null;
+  const name = (s && s.parts[key] && s.parts[key].name) || (S.idents[key] && S.idents[key].name) || key;
+  if (remember) { S.idents[key] = { to: target, name, at: now() }; if (s) delete s.temp[key]; markDirty(); }
+  else if (s) { s.temp[key] = target; }
+  if (s) delete s.ignored[key];
+  save(); closeSheet(); render();
+  if (persisted === false) requestPersist(true);
+  const u = unitOf(target);
+  toast(`Tagged as ${targetLabel(target)}${target.p && u ? ' · ' + unitLabel(u) : ''}`, () => {
+    if (prevIdent) S.idents[key] = prevIdent; else delete S.idents[key];
+    if (s) { if (prevTemp) s.temp[key] = prevTemp; else delete s.temp[key]; }
+    save(); render();
+  });
+}
+
+/* Expected branches sheet */
+function openExpected() {
+  const d = U.draft; const sel = new Set(d.expected);
+  const branches = S.units.filter(u => !u.isRO).sort((a, b) => a.name.localeCompare(b.name));
+  const ro = S.units.find(u => u.isRO);
+  const draw = () => {
+    $('#exp-list').innerHTML = branches.map(u => `<label class="setting" style="padding:10px 0"><span class="code">${u.code}</span><div class="grow"><div class="title">${esc(u.name)}</div><div class="sub">${esc((u.category || '').toLowerCase())}${u.isNew ? ' · new' : ''}</div></div><span class="switch"><input type="checkbox" data-exp="${u.code}" ${sel.has(u.code) ? 'checked' : ''}><span></span></span></label>`).join('');
+    $('#exp-count').textContent = branches.filter(u => sel.has(u.code)).length + ' selected';
+  };
+  openSheet(`
+    <div class="sheet-head"><div class="grow"><h3>Who should attend</h3><div class="sub" id="exp-count"></div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
+    <div class="sheet-body">
+      <div class="picks">${[['all', 'All branches'], ['URBAN', 'Urban'], ['SEMI-URBAN', 'Semi-urban'], ['RURAL', 'Rural'], ['new', 'New branches'], ['none', 'Clear']].map(([k, l]) => `<button class="pick" data-expq="${k}">${l}</button>`).join('')}</div>
+      ${ro ? `<label class="setting" style="padding:4px 0;border-bottom:1px solid var(--line)"><div class="grow"><div class="title">Count RO staff too</div><div class="sub">Treat the Regional Office like a branch</div></div><span class="switch"><input type="checkbox" data-exp="${ro.code}" ${sel.has(ro.code) ? 'checked' : ''}><span></span></span></label>` : ''}
+      <div id="exp-list" class="list"></div>
+    </div>
+    <div class="sheet-foot"><button class="btn btn-primary btn-block" id="exp-done">Done</button></div>`);
+  draw();
+  const sheet = $('.sheet');
+  sheet.addEventListener('change', e => { const c = e.target.dataset.exp; if (!c) return; e.target.checked ? sel.add(+c) : sel.delete(+c); draw(); });
+  sheet.addEventListener('click', e => {
+    const b = e.target.closest('[data-expq]'); if (!b) return;
+    const k = b.dataset.expq;
+    for (const u of branches) sel.delete(u.code);
+    if (k !== 'none') for (const u of branches) if (k === 'all' || (k === 'new' ? u.isNew : u.category === k)) sel.add(u.code);
+    draw();
+  });
+  $('#exp-done').onclick = () => {
+    d.expected = S.units.map(u => u.code).filter(c => sel.has(c));
+    if (S.session && U.sessionDraft && d === U.sessionDraft) { S.session.expected = d.expected; U.draft = null; U.sessionDraft = null; save(); }
+    closeSheet(); renderMain();
+  };
+}
+
+/* Call sheet */
+function openCall(code) {
+  const u = unitByCode.get(code); const s = S.session;
+  const nums = [];
+  if (u.mobile) nums.push(['Branch mobile', u.mobile]);
+  if (u.phone) nums.push(['Landline', u.phone]);
+  const staff = u.staff.slice().sort((a, b) => (b.bm - a.bm) || (b.second - a.second));
+  for (const p of staff) if (p.phone) nums.push([pretty(p.name), p.phone, p.bm ? 'Branch Manager' : p.second ? 'Second in command' : p.designation]);
+  const called = s && s.called[code];
+  openSheet(`
+    <div class="sheet-head"><span class="code" style="margin-top:3px">${u.code}</span><div class="grow"><h3>${esc(unitLabel(u))}</h3><div class="sub">${called ? 'Called ' + ago(called) : 'Not called yet'}</div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
+    <div class="sheet-body">
+      <div class="list card" style="box-shadow:none;border:1px solid var(--line)">${nums.map(([l, n, sub]) => `<div class="item"><div class="grow"><div class="title ellipsis">${esc(l)}</div><div class="sub"><span class="mono">${esc(n)}</span>${sub ? ' · ' + esc(sub) : ''}</div></div><button class="icon-btn" data-act="copy" data-v="${esc(n)}" aria-label="Copy number">${I.copy}</button><a class="call-btn" href="tel:${tel(n)}" data-act="called" data-code="${u.code}">${I.phone}Call</a></div>`).join('') || '<div class="empty">No numbers saved for this branch. Add them in the Directory.</div>'}</div>
+      ${s ? `<button class="btn ${called ? 'btn-ghost' : 'btn-soft'} btn-block" data-act="toggle-called" data-code="${u.code}">${called ? 'Clear “called” mark' : I.check + 'Mark as called'}</button>` : ''}
+    </div>`);
+}
+
+/* Person editor */
+function openPerson(id, unitCode) {
+  const isNew = !id;
+  const p = isNew ? { id: 'P' + uid(), empId: '', name: '', designation: '', phone: '', bm: false, second: false, dept: '' } : personById.get(id).ref;
+  const curUnit = isNew ? (unitCode || S.units[0]?.code) : personById.get(id).unit;
+  const links = Object.entries(S.idents).filter(([, v]) => v.to.p === p.id);
+  openSheet(`
+    <div class="sheet-head"><div class="grow"><h3>${isNew ? 'Add person' : esc(pretty(p.name))}</h3>${isNew ? '' : `<div class="sub">Emp ID <span class="mono">${esc(p.empId)}</span></div>`}</div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
+    <form class="sheet-body" id="person-form">
+      <div class="field"><label for="p-name">Name</label><input class="input" id="p-name" value="${esc(p.name)}" required></div>
+      <div class="field"><label for="p-unit">Branch / office</label><select class="input" id="p-unit">${S.units.slice().sort((a, b) => a.isRO - b.isRO || a.name.localeCompare(b.name)).map(u => `<option value="${u.code}" ${u.code === curUnit ? 'selected' : ''}>${esc(unitLabel(u))} (${u.code})</option>`).join('')}</select></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field"><label for="p-emp">Emp ID</label><input class="input mono" id="p-emp" inputmode="numeric" value="${esc(p.empId)}"></div>
+        <div class="field"><label for="p-phone">Mobile</label><input class="input mono" id="p-phone" inputmode="tel" value="${esc(p.phone)}"></div>
+      </div>
+      <div class="field"><label for="p-desig">Designation</label><input class="input" id="p-desig" value="${esc(p.designation)}"></div>
+      <div class="field"><label for="p-dept">Department (RO staff)</label><input class="input" id="p-dept" value="${esc(p.dept)}" placeholder="e.g. RAC / RAVC"></div>
+      <label class="setting" style="padding:0"><div class="grow"><div class="title">Branch Manager</div></div><span class="switch"><input type="checkbox" id="p-bm" ${p.bm ? 'checked' : ''}><span></span></span></label>
+      <label class="setting" style="padding:0"><div class="grow"><div class="title">Second in command</div></div><span class="switch"><input type="checkbox" id="p-2" ${p.second ? 'checked' : ''}><span></span></span></label>
+      ${links.length ? `<div class="flabel">Linked accounts</div><div class="list card" style="box-shadow:none;border:1px solid var(--line)">${links.map(([k, v]) => `<div class="item"><span class="avatar ${k.startsWith('g:') ? 'g' : ''}">${esc(initials(v.name))}</span><div class="grow"><div class="title ellipsis">${esc(v.name)}</div><div class="sub">${k.startsWith('g:') ? 'Google account' : k.startsWith('t:') ? 'Phone' : 'Display name'}</div></div><button type="button" class="icon-btn" data-act="unlink" data-key="${esc(k)}" aria-label="Unlink">${I.x}</button></div>`).join('')}</div>` : ''}
+      <div style="display:flex;gap:10px">${isNew ? '' : `<button type="button" class="btn btn-danger" data-act="delete-person" data-id="${esc(p.id)}">${I.trash}Delete</button>`}<button class="btn btn-primary" style="flex:1" type="submit">${isNew ? 'Add person' : 'Save'}</button></div>
+    </form>`);
+  $('#person-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const name = $('#p-name').value.trim(); if (!name) return;
+    const unit = +$('#p-unit').value;
+    const upd = { ...p, name, designation: $('#p-desig').value.trim(), phone: $('#p-phone').value.trim(), dept: $('#p-dept').value.trim(), bm: $('#p-bm').checked, second: $('#p-2').checked, empId: +$('#p-emp').value || '' };
+    for (const u of S.units) u.staff = u.staff.filter(x => x.id !== p.id);
+    const target = S.units.find(u => u.code === unit);
+    if (upd.bm) target.staff.forEach(x => { x.bm = false; });
+    if (upd.second) target.staff.forEach(x => { x.second = false; });
+    target.staff.push(upd);
+    reindex(); markDirty(); save(); closeSheet(); render();
+    toast(isNew ? 'Person added' : 'Saved');
+  });
+}
+function openUnitEdit(code) {
+  const u = unitByCode.get(code);
+  openSheet(`
+    <div class="sheet-head"><div class="grow"><h3>Edit ${esc(unitLabel(u))}</h3><div class="sub mono">${u.code}</div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
+    <form class="sheet-body" id="unit-form">
+      <div class="field"><label for="u-name">Name</label><input class="input" id="u-name" value="${esc(u.name)}" required></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="field"><label for="u-mob">Branch mobile</label><input class="input mono" id="u-mob" inputmode="tel" value="${esc(u.mobile)}"></div>
+        <div class="field"><label for="u-ph">Landline</label><input class="input mono" id="u-ph" inputmode="tel" value="${esc(u.phone)}"></div>
+      </div>
+      <label class="setting" style="padding:0"><div class="grow"><div class="title">Expected in meetings</div><div class="sub">Included when you create a new meeting</div></div><span class="switch"><input type="checkbox" id="u-exp" ${u.expect ? 'checked' : ''}><span></span></span></label>
+      <button class="btn btn-primary btn-block" type="submit">Save</button>
+    </form>`);
+  $('#unit-form').addEventListener('submit', e => {
+    e.preventDefault();
+    u.name = $('#u-name').value.trim() || u.name; u.mobile = $('#u-mob').value.trim(); u.phone = $('#u-ph').value.trim(); u.expect = $('#u-exp').checked;
+    reindex(); markDirty(); save(); closeSheet(); render(); toast('Saved');
+  });
+}
+
+/* Session menu */
+function openSessionMenu() {
+  const s = S.session;
+  openSheet(`
+    <div class="sheet-head"><div class="grow"><h3>Meeting options</h3><div class="sub mono">${esc(s.meetingCode)}</div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
+    <div class="sheet-body">
+      <div class="list card" style="box-shadow:none;border:1px solid var(--line)">
+        ${s.source === 'demo' ? '' : `<a class="item tap" href="${esc(s.meetingUri)}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">${I.ext.replace('<svg', '<svg style="width:20px;height:20px"')}<div class="grow title">Open in Google Meet</div></a>`}
+        <button class="item tap" data-act="edit-expected">${I.sliders.replace('<svg', '<svg style="width:20px;height:20px"')}<div class="grow"><div class="title">Change who should attend</div><div class="sub">${s.expected.length} offices expected</div></div></button>
+        <button class="item tap" data-act="edit-details">${I.edit.replace('<svg', '<svg style="width:20px;height:20px"')}<div class="grow"><div class="title">Edit time, agenda, headed by</div></div></button>
+        <button class="item tap" data-act="copy-summary">${I.copy.replace('<svg', '<svg style="width:20px;height:20px"')}<div class="grow"><div class="title">Copy attendance summary</div><div class="sub">Joined, left and absent branches as text</div></div></button>
+      </div>
+      <button class="btn btn-danger btn-block" data-act="end-session">${I.stop}Close this session</button>
+      <p class="hint" style="margin:0;text-align:center">Closing clears this board. Your tags stay saved.</p>
+    </div>`);
+}
+function openDetailsEdit() {
+  const d = S.session.details;
+  openSheet(`
+    <div class="sheet-head"><h3 class="grow">Meeting details</h3><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
+    <form class="sheet-body" id="det-form">
+      <div class="field"><label for="d-when">Time of VC</label><input class="input" type="datetime-local" id="d-when" value="${esc(d.when ? toLocalInput(new Date(d.when)) : '')}"></div>
+      <div class="field"><label for="d-agenda">Agenda</label><textarea class="input" id="d-agenda" rows="2">${esc(d.agenda)}</textarea></div>
+      <div class="field"><label for="d-head">Headed by</label><input class="input" id="d-head" value="${esc(d.headedBy)}"></div>
+      <button class="btn btn-primary btn-block" type="submit">Save</button>
+    </form>`);
+  $('#det-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const w = $('#d-when').value;
+    S.session.details = { when: w ? new Date(w).toISOString() : '', agenda: $('#d-agenda').value.trim(), headedBy: $('#d-head').value.trim() };
+    U.shareText = null; save(); closeSheet(); render(); toast('Details updated');
+  });
+}
+function openAttach() {
+  openSheet(`
+    <div class="sheet-head"><div class="grow"><h3>Track an existing meeting</h3><div class="sub">For a Meet link you created in Calendar or the Meet app</div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
+    <form class="sheet-body" id="att-form">
+      <div class="field"><label for="a-link">Meet link or code</label><input class="input mono" id="a-link" placeholder="meet.google.com/abc-mnop-xyz" required autocapitalize="off" spellcheck="false"></div>
+      <div class="field"><label for="a-agenda">Agenda <span class="faint">(optional)</span></label><input class="input" id="a-agenda"></div>
+      <div class="banner info">${I.info}<div>You need to be the meeting's owner, or have created it from the same Google account, for Google to share who joined.</div></div>
+      <button class="btn btn-primary btn-block" type="submit" id="att-go">${I.link}Start tracking</button>
+    </form>`);
+  $('#att-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const code = parseCode($('#a-link').value);
+    if (!code) { toast('That doesn\'t look like a Meet link. It should contain a code like abc-mnop-xyz.'); return; }
+    const btn = $('#att-go'); btn.disabled = true; btn.textContent = 'Connecting…';
+    try {
+      const space = await G.call('spaces/' + code, { interactive: true });
+      S.session = newSession({ source: 'google', attached: true, spaceName: space.name, meetingUri: space.meetingUri, meetingCode: space.meetingCode || code, details: { when: '', agenda: $('#a-agenda').value.trim(), headedBy: '' } });
+      save(); closeSheet(); U.boardTab = 'miss'; setTab('meet'); syncNow();
+    } catch (err) {
+      btn.disabled = false; btn.innerHTML = I.link + 'Start tracking';
+      toast(err.code === 404 || err.code === 403 ? 'Google could not find that meeting under your account.' : err.message);
+    }
+  });
+}
+
+/* ───────────────────────── actions ───────────────────────── */
+async function doCreate() {
+  const d = U.draft;
+  const when = d.when ? new Date(d.when).toISOString() : '';
+  const details = { when, agenda: d.agenda.trim(), headedBy: d.headedBy.trim() };
+  if (details.agenda) S.recentAgendas = [details.agenda, ...(S.recentAgendas || []).filter(a => a !== details.agenda)].slice(0, 8);
+  if (S.session && !(await confirmSheet('Replace the current board?', 'Starting a new meeting closes the board for <b>' + esc(S.session.meetingCode) + '</b>. Your tags stay saved.', 'Start new meeting'))) return;
+  if (d.demo) {
+    S.session = startDemo(details, d.expected);
+    save(); U.draft = null; U.route = null; U.boardTab = 'miss'; U.shareText = null; render(); syncNow(); return;
+  }
+  if (!S.settings.clientId) { toast('Add your Google Client ID in Settings first.'); return; }
+  const btn = $('#create-btn'); btn.disabled = true; btn.textContent = 'Creating…';
+  try {
+    S.settings.controls = { ...d.controls };
+    const { space, note } = await googleCreate(d.controls);
+    S.session = newSession({ source: 'google', spaceName: space.name, meetingUri: space.meetingUri, meetingCode: space.meetingCode, details, expected: d.expected, controlsNote: note });
+    save(); U.draft = null; U.shareText = null; U.boardTab = 'miss';
+    go({ name: 'share' });
+    scheduleSync(8000);
+  } catch (e) {
+    btn.disabled = false; btn.innerHTML = I.plus + 'Create meeting';
+    toast(e.message);
+  }
+}
+function copyText(t, msg = 'Copied') {
+  const fallback = () => { const ta = document.createElement('textarea'); ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); toast(msg); } catch (e) { toast('Copy failed. Select the text and copy it.'); } ta.remove(); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(() => toast(msg), fallback); else fallback();
+}
+function summaryText() {
+  const s = S.session, b = board();
+  const L = ['*VC attendance – RO Udaipur*'];
+  if (s.details.agenda) L.push(s.details.agenda);
+  if (s.details.when) L.push(fmtWhen(s.details.when));
+  L.push(`${b.joined}/${b.total} branches joined`, '');
+  const nm = r => `${unitLabel(r.u)} (${r.u.code})`;
+  if (b.rows.in.length) L.push('✅ In meeting: ' + b.rows.in.filter(r => !r.u.isRO).map(nm).join(', '));
+  if (b.rows.left.length) L.push('🟡 Joined & left: ' + b.rows.left.filter(r => !r.u.isRO).map(nm).join(', '));
+  if (b.rows.miss.length) L.push('❌ Not joined: ' + b.rows.miss.map(nm).join(', '));
+  return L.join('\n');
+}
+function exportData(kind) {
+  const date = new Date().toISOString().slice(0, 10);
+  const data = kind === 'map'
+    ? { kind: 'rollcall-mappings', v: 1, exported: new Date().toISOString(), idents: S.idents }
+    : { kind: 'rollcall-backup', v: 1, exported: new Date().toISOString(), units: S.units, idents: S.idents, settings: { ...S.settings, signedIn: false }, recentAgendas: S.recentAgendas };
+  const name = `roll-call-${kind === 'map' ? 'mappings' : 'backup'}-${date}.json`;
+  const blob = new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' });
+  const finish = () => { S.backup = { at: now(), dirty: 0 }; save(); render(); };
+  let file = null; try { file = new File([blob], name, { type: 'application/json' }); } catch (e) {}
+  openSheet(`
+    <div class="sheet-head"><div class="grow"><h3>Save ${kind === 'map' ? 'mappings' : 'backup'}</h3><div class="sub mono">${esc(name)}</div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
+    <div class="sheet-body">
+      <p class="muted" style="margin:0">${kind === 'map' ? Object.keys(S.idents).length + ' linked accounts.' : 'Branches, staff, ' + Object.keys(S.idents).length + ' linked accounts and settings.'} Keep it somewhere safe, like your Drive or a WhatsApp chat with yourself.</p>
+      <div class="share-grid">
+        <button class="btn btn-primary" id="ex-dl">${I.down}Download</button>
+        <button class="btn btn-soft" id="ex-share" ${file && navigator.canShare && navigator.canShare({ files: [file] }) ? '' : 'disabled'}>${I.share}Send to…</button>
+      </div>
+    </div>`);
+  $('#ex-dl').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); closeSheet(); finish(); toast('Backup downloaded'); };
+  $('#ex-share').onclick = () => navigator.share({ files: [file], title: name }).then(() => { closeSheet(); finish(); toast('Backup sent'); }).catch(() => {});
+}
+function pickImport() {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,.js,application/json,text/javascript';
+  inp.onchange = async () => {
+    const f = inp.files[0]; if (!f) return;
+    const text = await f.text();
+    try {
+      if (/UDAIRO_DATA/.test(text)) {
+        const D = new Function(text + ';return UDAIRO_DATA;')();
+        const units = unitsFromUdairo(D);
+        const nStaff = units.reduce((a, u) => a + u.staff.length, 0);
+        if (!units.length) throw new Error();
+        if (S.units.length && !(await confirmSheet('Update the directory?', `Load <b>${units.length}</b> offices and <b>${nStaff}</b> staff from ${esc(f.name)}. Tags stay with each person because they follow the emp ID. Edits you made in the app are replaced by the file.`, 'Update directory'))) return;
+        const keep = new Map(S.units.map(u => [u.code, u.expect]));
+        units.forEach(u => { if (keep.has(u.code)) u.expect = keep.get(u.code); });
+        S.units = units; reindex(); markDirty(); save(); render(); toast(`Loaded ${units.length} offices and ${nStaff} staff`);
+        return;
+      }
+      const j = JSON.parse(text);
+      if (j.kind === 'rollcall-mappings') {
+        const n = Object.keys(j.idents || {}).length;
+        if (!(await confirmSheet('Import mappings?', `Add <b>${n}</b> linked accounts. Accounts you already have are updated.`, 'Import'))) return;
+        Object.assign(S.idents, j.idents); save(); render(); toast(n + ' mappings imported');
+      } else if (j.kind === 'rollcall-backup') {
+        if (!(await confirmSheet('Restore this backup?', `This replaces the directory, linked accounts and settings on this phone with the backup from ${esc(new Date(j.exported).toLocaleString('en-IN'))}.`, 'Restore', true))) return;
+        S.units = j.units || S.units; S.idents = j.idents || {}; S.settings = { ...S.settings, ...j.settings, signedIn: S.settings.signedIn }; S.recentAgendas = j.recentAgendas || [];
+        S.backup = { at: now(), dirty: 0 }; reindex(); save(); render(); toast('Backup restored');
+      } else throw new Error();
+    } catch (e) { toast('That file isn\'t a Roll Call backup or udairo.js.'); }
+  };
+  inp.click();
+}
+
+const ACT = {
+  tab: el => setTab(el.dataset.tab),
+  back: () => { if (U.route && U.route.name === 'share') { U.route = null; render(); return; } U.route = null; U.draft = null; render(); },
+  'sheet-close': () => closeSheet(),
+  'open-create': el => { U.draft = draftDefault(el.dataset.demo === '1'); go({ name: 'create' }); },
+  'open-attach': () => { if (!S.settings.clientId) { toast('Add your Google Client ID in Settings first.'); return; } openAttach(); },
+  'draft-set': el => { U.draft.controls[el.dataset.k] = el.dataset.v; renderMain(); },
+  'draft-pick': el => { U.draft[el.dataset.k] = el.dataset.v; renderMain(); },
+  'pick-expected': () => openExpected(),
+  create: () => doCreate(),
+  'share-native': () => { const t = U.shareText; if (navigator.share) navigator.share({ text: t }).catch(() => {}); else copyText(t, 'Message copied. Paste it in any app.'); },
+  'copy-share': () => copyText(U.shareText, 'Message copied'),
+  'to-board': () => { U.route = null; U.tab = 'meet'; render(); },
+  'go-share': () => { U.shareText = null; go({ name: 'share' }); },
+  'board-tab': el => { U.boardTab = el.dataset.k; renderMain(); },
+  sync: () => { if (!S.session) return; S.session.error = null; syncNow(); },
+  reconnect: async () => { try { await G.getToken(true); S.session && (S.session.error = null); syncNow(); } catch (e) { toast(e.message); } },
+  tag: el => openTag(el.dataset.key, el.dataset.mode),
+  assign: el => {
+    const sh = $('.sheet'); const key = sh.dataset.key;
+    const t = el.dataset.u != null ? { u: +el.dataset.u } : { p: el.dataset.p };
+    const rem = $('#tag-remember'); assign(key, t, sh.dataset.mode === 'relink' || !S.session ? true : rem ? rem.checked : true);
+  },
+  untag: () => {
+    const key = $('.sheet').dataset.key; const prev = S.idents[key]; const prevT = S.session && S.session.temp[key];
+    delete S.idents[key]; if (S.session) delete S.session.temp[key]; markDirty(); save(); closeSheet(); render();
+    toast('Tag removed', () => { if (prev) S.idents[key] = prev; if (prevT) S.session.temp[key] = prevT; save(); render(); });
+  },
+  ignore: () => { const key = $('.sheet').dataset.key; const s = S.session; if (s.ignored[key]) delete s.ignored[key]; else s.ignored[key] = true; save(); closeSheet(); render(); },
+  'call-sheet': el => openCall(+el.dataset.code),
+  called: el => { const s = S.session; if (s) { s.called[+el.dataset.code] = now(); save(); setTimeout(() => { if (!$('#layer .sheet')) renderMain(); }, 600); } },
+  'toggle-called': el => { const s = S.session, c = +el.dataset.code; if (s.called[c]) delete s.called[c]; else s.called[c] = now(); save(); closeSheet(); renderMain(); },
+  copy: el => copyText(el.dataset.v, 'Number copied'),
+  'session-menu': () => openSessionMenu(),
+  'edit-expected': () => { closeSheet(true); U.draft = { expected: S.session.expected.slice() }; U.sessionDraft = U.draft; openExpected(); },
+  'edit-details': () => { closeSheet(true); openDetailsEdit(); },
+  'copy-summary': () => { copyText(summaryText(), 'Attendance summary copied'); closeSheet(); },
+  'end-session': async () => { closeSheet(true); if (await confirmSheet('Close this session?', 'The board for <b>' + esc(S.session.meetingCode) + '</b> will be cleared. Tags you saved stay on this phone.', 'Close session', true)) { clearTimeout(syncTimer); S.session = null; save(); render(); } },
+  'dir-filter': el => { U.dirFilter = el.dataset.k; renderMain(); },
+  'open-unit': el => go({ name: 'unit', code: +el.dataset.code }),
+  'edit-unit': el => openUnitEdit(+el.dataset.code),
+  'edit-person': el => openPerson(el.dataset.id),
+  'add-person': el => openPerson(null, el.dataset.code ? +el.dataset.code : (U.dirFilter === 'ro' ? S.units.find(u => u.isRO)?.code : undefined)),
+  'delete-person': async el => {
+    const id = el.dataset.id; const p = personById.get(id); closeSheet(true);
+    if (!(await confirmSheet('Delete ' + pretty(p.name) + '?', 'They will be removed from the directory and any linked accounts will be untagged.', 'Delete', true))) return;
+    for (const u of S.units) u.staff = u.staff.filter(x => x.id !== id);
+    for (const k in S.idents) if (S.idents[k].to.p === id) delete S.idents[k];
+    reindex(); markDirty(); save(); render(); toast('Deleted');
+  },
+  unlink: el => { const k = el.dataset.key; delete S.idents[k]; markDirty(); save(); el.closest('.item').remove(); render(); toast('Account unlinked'); },
+  signin: async () => { try { await G.getToken(true); toast('Google connected'); render(); } catch (e) { toast(e.message); } },
+  signout: () => { G.signOut(); render(); toast('Disconnected from Google'); },
+  persist: () => requestPersist(false),
+  export: el => exportData(el.dataset.kind),
+  import: () => pickImport(),
+  'clear-maps': async () => { if (await confirmSheet('Clear all linked accounts?', 'Every saved tag will be removed. Export your mappings first if you may need them.', 'Clear all', true)) { S.idents = {}; markDirty(); save(); render(); toast('All tags cleared'); } },
+  'reset-dir': async () => { if (await confirmSheet('Reset the directory?', 'Branches and staff go back to the built-in list. Edits and added people are lost; tags on existing staff stay.', 'Reset', true)) { S.units = unitsFromSource(window.SEED_DATA); reindex(); save(); render(); toast('Directory reset'); } }
+};
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const a = el.dataset.act;
+  if (a === 'called') { ACT.called(el); return; }
+  if (el.tagName === 'A' && !el.getAttribute('href')?.startsWith('#')) return;
+  e.preventDefault();
+  ACT[a] && ACT[a](el, e);
+});
+$$('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.dataset.draft && U.draft) U.draft[t.dataset.draft] = t.value;
+  if (t.id === 'share-text') { U.shareText = t.value; const wa = $('#wa-link'); if (wa) wa.href = 'https://wa.me/?text=' + encodeURIComponent(t.value); }
+  if (t.id === 'dir-q') { U.dirQ = t.value; $('#dir-list').innerHTML = dirList(); }
+  if (t.dataset.setting === 'clientId') { S.settings.clientId = t.value.trim(); save(); const b = $('[data-act="signin"]'); if (b) b.disabled = !S.settings.clientId; }
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.ctrl && U.draft) { U.draft.controls[t.dataset.ctrl] = t.checked; renderMain(); }
+  if (t.dataset.setting === 'poll') { S.settings.poll = +t.value; save(); scheduleSync(); }
+  if (t.dataset.setting === 'keepAwake') { S.settings.keepAwake = t.checked; save(); manageWake(); }
+});
+document.addEventListener('submit', e => { if (e.target.id === 'create-form') { e.preventDefault(); doCreate(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+
+/* ───────────────────────── toast, wake lock, timers ───────────────────────── */
+let toastTimer = null;
+function toast(msg, undo) {
+  const t = $('#toast'); $('#toast-msg').textContent = msg;
+  const b = $('#toast-act'); b.hidden = !undo;
+  b.onclick = () => { undo && undo(); t.classList.remove('show'); };
+  t.classList.add('show'); clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), undo ? 5000 : 3000);
+}
+async function manageWake() {
+  const want = S.settings.keepAwake && S.session && !S.session.ended && U.tab === 'meet' && !U.route && !document.hidden;
+  try {
+    if (want && !U.wake && navigator.wakeLock) { U.wake = await navigator.wakeLock.request('screen'); U.wake.addEventListener('release', () => { U.wake = null; }); }
+    else if (!want && U.wake) { await U.wake.release(); U.wake = null; }
+  } catch (e) { U.wake = null; }
+}
+document.addEventListener('visibilitychange', () => { manageWake(); if (!document.hidden && S.session && !S.session.ended) syncNow(); });
+setInterval(() => { $$('[data-ago]').forEach(el => { el.textContent = ago(+el.dataset.ago || 0); }); }, 5000);
+
+/* ───────────────────────── boot ───────────────────────── */
+if ('serviceWorker' in navigator && /^https:|^http:\/\/localhost/.test(location.href)) navigator.serviceWorker.register('sw.js').catch(() => {});
+checkPersist().then(() => { if (U.tab === 'settings') renderMain(); });
+render();
+if (S.session && !S.session.ended) syncNow();
+window.__rc = { S, board, suggest };
+})();
