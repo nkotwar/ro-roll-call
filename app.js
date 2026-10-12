@@ -7,6 +7,8 @@
 const KEY = 'rollcall.v1';
 const SCOPES = 'https://www.googleapis.com/auth/meetings.space.created https://www.googleapis.com/auth/meetings.space.readonly';
 const API = 'https://meet.googleapis.com/v2/';
+// Your OAuth Client ID. It is public by design (Google shows it in every sign-in URL), so it is safe to keep in the code.
+const DEFAULT_CLIENT_ID = '754163086387-47868o8lni1hfipha1tnm1r7bh94bgnv.apps.googleusercontent.com';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -99,7 +101,7 @@ function fresh() {
     units: window.SEED_DATA ? unitsFromSource(window.SEED_DATA) : [],
     idents: {},
     session: null,
-    settings: { clientId: '', controls: { ...DEFAULT_CONTROLS }, poll: 15, keepAwake: true, signedIn: false },
+    settings: { clientId: DEFAULT_CLIENT_ID, controls: { ...DEFAULT_CONTROLS }, poll: 15, keepAwake: true, signedIn: false },
     recentAgendas: [],
     backup: { at: null, dirty: 0 }
   };
@@ -108,6 +110,7 @@ let S;
 try { S = JSON.parse(localStorage.getItem(KEY)); } catch (e) { S = null; }
 if (!S || S.v !== 1) S = fresh();
 S.settings = { ...fresh().settings, ...S.settings, controls: { ...DEFAULT_CONTROLS, ...(S.settings || {}).controls } };
+if (!/^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/.test(S.settings.clientId || '')) S.settings.clientId = DEFAULT_CLIENT_ID;
 let saveFailed = false;
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); saveFailed = false; }
@@ -730,7 +733,7 @@ function viewSettings() {
   return `
   <div class="sec-label">Google account</div>
   <section class="card pad" style="display:flex;flex-direction:column;gap:12px">
-    <div class="field"><label for="s-client">OAuth Client ID</label><input class="input mono" id="s-client" style="font-size:13px" value="${esc(st.clientId)}" placeholder="1234-abc.apps.googleusercontent.com" data-setting="clientId" spellcheck="false" autocapitalize="off"><span class="hint">From your Google Cloud project. See SETUP.md for the steps.</span></div>
+    <div class="field"><label for="s-client">OAuth Client ID</label><input class="input mono" id="s-client" style="font-size:13px" value="${esc(st.clientId)}" placeholder="1234-abc.apps.googleusercontent.com" data-setting="clientId" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off"><span class="hint">Already filled in. Change it only if you make a new Google Cloud project.</span></div>
     <div class="row">
       <div class="grow"><div class="title">${signed ? 'Connected' : 'Not connected'}</div><div class="sub">${signed ? 'Meet access granted on this phone' : 'Sign in once to create and track meetings'}</div></div>
       ${signed ? `<button class="btn btn-ghost" data-act="signout">Disconnect</button>` : `<button class="btn btn-primary" data-act="signin" ${st.clientId ? '' : 'disabled'}>${I.google}Connect</button>`}
