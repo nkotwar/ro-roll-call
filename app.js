@@ -197,7 +197,7 @@ function newSession(fields) {
   return {
     id: uid(), source: 'google', spaceName: '', meetingUri: '', meetingCode: '',
     details: { when: '', agenda: '', headedBy: '' }, expected: expectedDefault(),
-    records: [], parts: {}, temp: {}, ignored: {}, called: {}, state: 'waiting', ended: false,
+    records: [], parts: {}, temp: {}, ignored: {}, state: 'waiting', ended: false,
     lastSync: null, error: null, createdAt: now(), controlsNote: '', ...fields
   };
 }
@@ -228,9 +228,55 @@ function board() {
   const e = rows.in.filter(r => r.expected).length, l = rows.left.filter(r => r.expected).length;
   rows.in.sort((a, b) => (b.expected - a.expected) || (a.u.isRO - b.u.isRO) || a.u.name.localeCompare(b.u.name));
   rows.left.sort((a, b) => b.lastLeft - a.lastLeft);
-  rows.miss.sort((a, b) => ((s.called[a.u.code] ? 1 : 0) - (s.called[b.u.code] ? 1 : 0)) || a.u.name.localeCompare(b.u.name));
+  rows.miss.sort((a, b) => (callRank(a.u.code) - callRank(b.u.code)) || a.u.name.localeCompare(b.u.name));
   people.sort((a, b) => (b.p.active - a.p.active) || String(a.p.name).localeCompare(String(b.p.name)));
   return { rows, untagged, people, total: exp.size, joined: e + l, inCount: e, leftCount: l, missCount: rows.miss.length };
+}
+
+/* ───────────────────────── call tracking ───────────────────────── */
+// One status per branch, independent of meetings, so a pre-meeting calling round can be tracked.
+const CALL_STATUS = {
+  informed: { label: 'Informed', cls: 'in', rank: 5 },
+  recall: { label: 'Recall later', cls: 'left', rank: 1 },
+  noanswer: { label: 'No answer', cls: '', rank: 2 },
+  denied: { label: 'Denied', cls: 'miss', rank: 4 },
+  called: { label: 'Called', cls: 'acc', rank: 3 }
+};
+if (!S.calls) S.calls = {};
+const callOf = code => S.calls[code] || null;
+const callRank = code => { const c = callOf(code); return c ? (CALL_STATUS[c.status] || CALL_STATUS.called).rank : 0; };
+function callChip(code) {
+  const c = callOf(code); if (!c) return '';
+  const st = CALL_STATUS[c.status] || CALL_STATUS.called;
+  return `<span class="chip ${st.cls}">${st.label} · ${ago(c.at)}</span>`;
+}
+function dial(code, who, number) {
+  return `href="tel:${tel(number)}" data-act="dial" data-code="${code}" data-who="${esc(who)}" data-num="${esc(number)}"`;
+}
+function statusPicker(code) {
+  const cur = callOf(code);
+  return `<div class="status-grid">${['informed', 'recall', 'noanswer', 'denied'].map(k => `<button class="status-btn s-${k}" aria-pressed="${cur && cur.status === k}" data-act="call-status" data-code="${code}" data-status="${k}">${esc(CALL_STATUS[k].label)}</button>`).join('')}</div>`;
+}
+function setCallStatus(code, status, extra = {}) {
+  const prev = S.calls[code] ? { ...S.calls[code] } : null;
+  if (status === 'clear') delete S.calls[code];
+  else S.calls[code] = { status, at: (prev && extra.keepTime) ? prev.at : now(), who: extra.who || (prev && prev.who) || '', num: extra.num || (prev && prev.num) || '' };
+  if (S.pendingCall && S.pendingCall.code === code) S.pendingCall = null;
+  save();
+  const u = unitByCode.get(code);
+  return { prev, label: u ? unitLabel(u) : 'Branch' };
+}
+function openCallFeedback() {
+  const pc = S.pendingCall; if (!pc) return;
+  if (now() - pc.at > 3 * 3600e3) { S.pendingCall = null; save(); return; }
+  const u = unitByCode.get(pc.code); if (!u) { S.pendingCall = null; save(); return; }
+  const mins = Math.max(1, Math.round((now() - pc.at) / 60000));
+  openSheet(`
+    <div class="sheet-head"><span class="code" style="margin-top:3px">${u.code}</span><div class="grow"><h3>How did the call go?</h3><div class="sub">${esc(unitLabel(u))}${pc.who ? ' · ' + esc(pc.who) : ''} · ${mins} min ago</div></div></div>
+    <div class="sheet-body">
+      ${statusPicker(u.code)}
+      <button class="btn btn-ghost btn-block" data-act="call-status" data-code="${u.code}" data-status="called">Skip, just mark as called</button>
+    </div>`, { onClose: () => { if (S.pendingCall && S.pendingCall.code === u.code) { setCallStatus(u.code, 'called', pc); renderMain(); } } });
 }
 
 /* ───────────────────────── Google: auth + Meet API ───────────────────────── */
@@ -483,8 +529,33 @@ async function syncNow() {
 /* ───────────────────────── UI state ───────────────────────── */
 const U = { tab: 'meet', route: null, boardTab: 'miss', dirQ: '', dirFilter: 'branches', flash: new Set(), draft: null, wake: null };
 
-function setTab(t) { U.tab = t; U.route = null; render(); window.scrollTo(0, 0); }
-function go(route) { U.route = route; render(); window.scrollTo(0, 0); }
+let navDepth = 0, ignorePop = 0, exiting = false, sheetNav = false, pendingSheetPop = false;
+function navPush() { try { history.pushState({ rc: 'nav' }, ''); navDepth++; } catch (e) {} }
+function navPopSilently() { if (navDepth > 0) { navDepth--; ignorePop++; history.back(); } }
+function leaveRoute() { U.route = null; if (U.routeNav) { U.routeNav = false; navPopSilently(); } }
+function restoreScroll() { const y = U.scrollBefore || 0; requestAnimationFrame(() => window.scrollTo(0, y)); }
+function setTab(t) { leaveRoute(); U.tab = t; render(); window.scrollTo(0, 0); }
+function go(route) { if (!U.routeNav) { U.scrollBefore = window.scrollY; navPush(); U.routeNav = true; } U.route = route; render(); window.scrollTo(0, 0); }
+window.addEventListener('popstate', () => {
+  if (ignorePop) { ignorePop--; return; }
+  if (exiting) return;
+  if (navDepth > 0) navDepth--; else { try { history.pushState({ rc: 'guard' }, ''); } catch (e) {} }
+  handleBack();
+});
+function handleBack() {
+  if ($('#layer .sheet')) { sheetNav = false; closeSheet(false, true); return; }
+  if (U.route) { U.routeNav = false; U.route = null; U.draft = null; render(); restoreScroll(); return; }
+  if (U.tab !== 'meet') { U.tab = 'meet'; render(); window.scrollTo(0, 0); return; }
+  askExit();
+}
+async function askExit() {
+  const live = S.session && !S.session.ended;
+  if (await confirmSheet('Close Roll Call?', live ? 'The live board stops checking for joiners while the app is closed.' : 'You can open it again from your home screen.', 'Close app', true)) {
+    pendingSheetPop = false; exiting = true;
+    history.go(-(navDepth + 2));
+    setTimeout(() => { exiting = false; }, 1500); // still here (plain browser tab): stay usable
+  }
+}
 
 function render() {
   $$('.tab').forEach(b => b.setAttribute('aria-current', b.dataset.tab === U.tab ? 'page' : 'false'));
@@ -506,6 +577,7 @@ function renderMain() {
   else html = viewSettings();
   m.innerHTML = html;
   if (U.flash.size) setTimeout(() => U.flash.clear(), 1300);
+  if (U.slide) { const el = $('#dir-list') || $('#board-list'); if (el) el.classList.add(U.slide > 0 ? 'slide-l' : 'slide-r'); U.slide = 0; }
   afterRender();
 }
 function afterRender() {
@@ -652,11 +724,11 @@ function viewBoard() {
   let list = '';
   if (U.boardTab === 'miss') {
     list = b.rows.miss.length ? b.rows.miss.map(r => {
-      const u = r.u, bm = bmOf(u), num = callNumber(u), called = s.called[u.code];
+      const u = r.u, bm = bmOf(u), num = callNumber(u);
       return `<div class="item"><span class="stripe miss"></span><div class="grow"><div class="row" style="gap:8px"><span class="code">${u.code}</span><span class="title ellipsis">${esc(unitLabel(u))}</span></div>
-        <div class="sub ellipsis">${bm ? esc(pretty(bm.name)) : 'No staff listed'}</div>${called ? `<div class="called">${I.check.replace('<svg', '<svg style="width:13px;height:13px;vertical-align:-2px"')} Called ${ago(called)}</div>` : ''}</div>
+        <div class="sub ellipsis">${bm ? esc(pretty(bm.name)) : 'No staff listed'}</div>${callOf(u.code) ? `<div style="margin-top:4px">${callChip(u.code)}</div>` : ''}</div>
         <button class="icon-btn" data-act="call-sheet" data-code="${u.code}" aria-label="More numbers for ${esc(u.name)}">${I.more}</button>
-        ${num ? `<a class="call-btn" href="tel:${tel(num)}" data-act="called" data-code="${u.code}">${I.phone}Call</a>` : ''}</div>`;
+        ${num ? `<a class="call-btn" ${dial(u.code, u.mobile && num === u.mobile ? 'Branch mobile' : u.phone && num === u.phone ? 'Landline' : pretty(bmOf(u)?.name || ''), num)}>${I.phone}Call</a>` : ''}</div>`;
     }).join('') : `<div class="empty"><b>Everyone expected has joined</b>All ${b.total} branches have been in the meeting.</div>`;
   } else if (U.boardTab === 'left') {
     list = b.rows.left.length ? b.rows.left.map(r => {
@@ -694,7 +766,7 @@ function viewBoard() {
   ${b.untagged.length ? `<section class="card untagged"><div class="row"><span class="title grow">${b.untagged.length} ${b.untagged.length === 1 ? 'person needs' : 'people need'} a tag</span><span class="sub">tap to match</span></div>
     <div class="untagged-list">${b.untagged.map(p => `<button class="u-pill" data-act="tag" data-key="${esc(p.key)}">${I.tag}${esc(p.name)}</button>`).join('')}</div></section>` : ''}
   <div class="board-tabs"><div class="seg" role="tablist">${tabs.map(([k, l, n]) => `<button role="tab" aria-pressed="${U.boardTab === k}" data-act="board-tab" data-k="${k}">${l} <span class="mono" style="opacity:.7">${n}</span></button>`).join('')}</div></div>
-  <section class="card list">${list}</section>`;
+  <section class="card list" id="board-list">${list}</section>`;
 }
 
 /* ───────────────────────── views: directory ───────────────────────── */
@@ -726,15 +798,26 @@ function dirList() {
     const hitsP = [...personById.values()].filter(p => !unitByCode.get(p.unit)?.isRO && (p.name + ' ' + p.empId + ' ' + p.designation).toLowerCase().includes(q)).slice(0, 30);
     return (hitsU.map(unitRow).join('') + hitsP.map(p => personRow(p.ref, unitByCode.get(p.unit))).join('')) || `<div class="empty">Nothing matches “${esc(U.dirQ)}”.</div>`;
   }
-  return units.slice().sort((a, b) => a.name.localeCompare(b.name)).map(unitRow).join('');
+  return callSummary(units) + units.slice().sort((a, b) => a.name.localeCompare(b.name)).map(unitRow).join('');
+}
+function callSummary(units) {
+  const n = { informed: 0, recall: 0, noanswer: 0, denied: 0, called: 0, none: 0 };
+  for (const u of units) { const c = callOf(u.code); n[c ? c.status : 'none']++; }
+  if (n.none === units.length) return '';
+  const parts = [['informed', 'informed'], ['recall', 'recall later'], ['noanswer', 'no answer'], ['denied', 'denied'], ['called', 'called']].filter(([k]) => n[k]).map(([k, l]) => `<span class="chip ${CALL_STATUS[k].cls}">${n[k]} ${l}</span>`).join('');
+  return `<div class="item" style="flex-wrap:wrap;gap:8px"><div class="grow" style="min-width:100%"><div class="title">Calling round</div><div class="sub">${n.none} of ${units.length} branches not called yet</div></div><div class="row" style="flex-wrap:wrap;gap:6px;flex:1">${parts}</div><button class="btn btn-ghost" style="min-height:36px;padding:6px 12px" data-act="reset-calls">New round</button></div>`;
 }
 function unitRow(u) {
   const n = u.staff.reduce((a, p) => a + linkedCount(p.id), 0) + linkedCount(u.code);
-  return `<button class="item tap" data-act="open-unit" data-code="${u.code}"><span class="code">${u.code}</span><div class="grow"><div class="title ellipsis">${esc(u.name)}${u.isNew ? ' <span class="chip acc" style="margin-left:4px">New</span>' : ''}</div><div class="sub">${u.staff.length} staff · ${n} linked${u.expect ? '' : ' · not expected'}</div></div>${I.chev.replace('<svg', '<svg style="width:18px;height:18px;color:var(--faint)"')}</button>`;
+  return `<button class="item tap" data-act="open-unit" data-code="${u.code}"><span class="code">${u.code}</span><div class="grow"><div class="title ellipsis">${esc(u.name)}${u.isNew ? ' <span class="chip acc" style="margin-left:4px">New</span>' : ''}</div><div class="sub">${u.staff.length} staff · ${n} linked${u.expect ? '' : ' · not expected'}</div>${callOf(u.code) ? `<div style="margin-top:4px">${callChip(u.code)}</div>` : ''}</div>${I.chev.replace('<svg', '<svg style="width:18px;height:18px;color:var(--faint)"')}</button>`;
 }
 function personRow(p, u) {
   const n = linkedCount(p.id);
   return `<button class="item tap" data-act="edit-person" data-id="${esc(p.id)}"><span class="avatar">${esc(initials(p.name))}</span><div class="grow"><div class="title ellipsis">${esc(pretty(p.name))}</div><div class="sub ellipsis">${esc(p.designation)}${p.dept ? ' · ' + esc(p.dept) : ''}${u ? ' · ' + esc(u.name) : ''}</div></div>${n ? `<span class="chip acc">${n} linked</span>` : ''}${p.bm ? '<span class="chip">BM</span>' : p.second ? '<span class="chip">2nd</span>' : ''}</button>`;
+}
+function staffRow(p, u) {
+  const n = linkedCount(p.id);
+  return `<div class="item"><button class="plain grow" data-act="edit-person" data-id="${esc(p.id)}"><span class="avatar">${esc(initials(p.name))}</span><div class="grow"><div class="title ellipsis">${esc(pretty(p.name))}</div><div class="sub ellipsis">${p.bm ? 'Branch Manager' : p.second ? 'Second in command · ' + esc(p.designation) : esc(p.designation)}${p.dept ? ' · ' + esc(p.dept) : ''}${n ? ' · ' + n + ' linked' : ''}</div></div></button>${p.phone ? `<a class="icon-btn call" aria-label="Call ${esc(pretty(p.name))}" ${dial(u.code, pretty(p.name), p.phone)}>${I.phone}</a>` : ''}</div>`;
 }
 function viewUnit(code) {
   const u = unitByCode.get(code);
@@ -744,10 +827,15 @@ function viewUnit(code) {
   return `
   <section class="card pad" style="display:flex;flex-direction:column;gap:12px">
     <div class="row" style="gap:8px;flex-wrap:wrap"><span class="code">${u.code}</span><span class="mono muted">${esc(u.alpha)}</span>${u.category ? `<span class="chip">${esc(u.category.toLowerCase())}</span>` : ''}${u.isNew ? '<span class="chip acc">New branch</span>' : ''}</div>
-    <dl class="kv"><dt>Branch mobile</dt><dd class="mono">${u.mobile ? esc(u.mobile) : '<span class="faint">Not set</span>'}</dd><dt>Landline</dt><dd class="mono">${u.phone ? esc(u.phone) : '<span class="faint">Not set</span>'}</dd><dt>In meetings</dt><dd>${u.expect ? 'Expected by default' : 'Not expected by default'}</dd></dl>
+    <dl class="kv"><dt>In meetings</dt><dd>${u.expect ? 'Expected by default' : 'Not expected by default'}</dd></dl>
   </section>
+  <section class="card pad" style="display:flex;flex-direction:column;gap:12px">
+    <div class="row"><div class="grow"><div class="title">Call status</div><div class="sub">${callOf(u.code) ? `${esc(CALL_STATUS[callOf(u.code).status]?.label || 'Called')} ${ago(callOf(u.code).at)}${callOf(u.code).who ? ' · ' + esc(callOf(u.code).who) : ''}` : 'Not called yet. Call anyone below and you\'ll be asked how it went.'}</div></div>${callOf(u.code) ? `<button class="btn btn-ghost" style="min-height:36px;padding:6px 12px" data-act="call-status" data-code="${u.code}" data-status="clear">Clear</button>` : ''}</div>
+    ${statusPicker(u.code)}
+  </section>
+  ${u.mobile || u.phone ? `<section class="card list">${[['Branch mobile', u.mobile], ['Landline', u.phone]].filter(x => x[1]).map(([l, n]) => `<div class="item"><div class="grow"><div class="title">${l}</div><div class="sub mono">${esc(n)}</div></div><a class="call-btn" ${dial(u.code, l, n)}>${I.phone}Call</a></div>`).join('')}</section>` : ''}
   <div class="row" style="margin:6px 2px -4px"><span class="sec-label grow" style="margin:0">Staff · ${u.staff.length}</span><button class="btn btn-soft" style="min-height:36px;padding:6px 12px" data-act="add-person" data-code="${u.code}">${I.plus}Add</button></div>
-  <section class="card list">${u.staff.map(p => personRow(p)).join('') || '<div class="empty">No staff listed.</div>'}</section>
+  <section class="card list">${u.staff.slice().sort((a, b) => (b.bm - a.bm) || (b.second - a.second)).map(p => staffRow(p, u)).join('') || '<div class="empty">No staff listed.</div>'}</section>
   ${linkedUnit.length ? `<div class="sec-label">Accounts linked to the whole ${u.isRO ? 'office' : 'branch'}</div><section class="card list">${linkedUnit.map(([k, v]) => `<button class="item tap" data-act="tag" data-key="${esc(k)}" data-mode="relink"><span class="avatar">${esc(initials(v.name))}</span><div class="grow"><div class="title">${esc(v.name)}</div><div class="sub">Tap to change or unlink</div></div></button>`).join('')}</section>` : ''}`;
 }
 
@@ -802,14 +890,20 @@ function viewSettings() {
 let sheetClose = null;
 function openSheet(html, { onClose } = {}) {
   closeSheet(true);
+  if (pendingSheetPop) { pendingSheetPop = false; sheetNav = true; }
+  else if (!sheetNav) { navPush(); sheetNav = true; }
   const layer = $('#layer');
   layer.innerHTML = `<div class="scrim" data-act="sheet-close"></div><div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div>`;
   requestAnimationFrame(() => { $('.scrim', layer).classList.add('show'); $('.sheet', layer).classList.add('show'); });
   sheetClose = onClose || null;
   document.body.style.overflow = 'hidden';
 }
-function closeSheet(instant) {
+function closeSheet(instant, fromPop) {
   const layer = $('#layer'); if (!layer.firstChild) return;
+  if (sheetNav && !fromPop) {
+    sheetNav = false; pendingSheetPop = true;
+    setTimeout(() => { if (pendingSheetPop) { pendingSheetPop = false; navPopSilently(); } }, 0);
+  }
   const cb = sheetClose; sheetClose = null;
   document.body.style.overflow = '';
   if (instant) { layer.innerHTML = ''; return; }
@@ -932,12 +1026,11 @@ function openCall(code) {
   if (u.phone) nums.push(['Landline', u.phone]);
   const staff = u.staff.slice().sort((a, b) => (b.bm - a.bm) || (b.second - a.second));
   for (const p of staff) if (p.phone) nums.push([pretty(p.name), p.phone, p.bm ? 'Branch Manager' : p.second ? 'Second in command' : p.designation]);
-  const called = s && s.called[code];
   openSheet(`
-    <div class="sheet-head"><span class="code" style="margin-top:3px">${u.code}</span><div class="grow"><h3>${esc(unitLabel(u))}</h3><div class="sub">${called ? 'Called ' + ago(called) : 'Not called yet'}</div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
+    <div class="sheet-head"><span class="code" style="margin-top:3px">${u.code}</span><div class="grow"><h3>${esc(unitLabel(u))}</h3><div class="sub">${callOf(code) ? callChip(code) : 'Not called yet'}</div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
     <div class="sheet-body">
-      <div class="list card" style="box-shadow:none;border:1px solid var(--line)">${nums.map(([l, n, sub]) => `<div class="item"><div class="grow"><div class="title ellipsis">${esc(l)}</div><div class="sub"><span class="mono">${esc(n)}</span>${sub ? ' · ' + esc(sub) : ''}</div></div><button class="icon-btn" data-act="copy" data-v="${esc(n)}" aria-label="Copy number">${I.copy}</button><a class="call-btn" href="tel:${tel(n)}" data-act="called" data-code="${u.code}">${I.phone}Call</a></div>`).join('') || '<div class="empty">No numbers saved for this branch. Add them in the Directory.</div>'}</div>
-      ${s ? `<button class="btn ${called ? 'btn-ghost' : 'btn-soft'} btn-block" data-act="toggle-called" data-code="${u.code}">${called ? 'Clear “called” mark' : I.check + 'Mark as called'}</button>` : ''}
+      <div class="list card" style="box-shadow:none;border:1px solid var(--line)">${nums.map(([l, n, sub]) => `<div class="item"><div class="grow"><div class="title ellipsis">${esc(l)}</div><div class="sub"><span class="mono">${esc(n)}</span>${sub ? ' · ' + esc(sub) : ''}</div></div><button class="icon-btn" data-act="copy" data-v="${esc(n)}" aria-label="Copy number">${I.copy}</button><a class="call-btn" ${dial(u.code, l, n)}>${I.phone}Call</a></div>`).join('') || '<div class="empty">No numbers saved for this branch. Add them in the Directory.</div>'}</div>
+      <div class="flabel">Call status</div>${statusPicker(u.code)}
     </div>`);
 }
 
@@ -1064,7 +1157,7 @@ async function doCreate() {
   if (S.session && !(await confirmSheet('Replace the current board?', 'Starting a new meeting closes the board for <b>' + esc(S.session.meetingCode) + '</b>. Your tags stay saved.', 'Start new meeting'))) return;
   if (d.demo) {
     S.session = startDemo(details, d.expected);
-    save(); U.draft = null; U.route = null; U.boardTab = 'miss'; U.shareText = null; render(); syncNow(); return;
+    save(); U.draft = null; leaveRoute(); U.boardTab = 'miss'; U.shareText = null; render(); syncNow(); return;
   }
   if (!S.settings.clientId) { toast('Add your Google Client ID in Settings first.'); return; }
   const btn = $('#create-btn'); btn.disabled = true; btn.textContent = 'Creating…';
@@ -1151,7 +1244,7 @@ function pickImport() {
 
 const ACT = {
   tab: el => setTab(el.dataset.tab),
-  back: () => { if (U.route && U.route.name === 'share') { U.route = null; render(); return; } U.route = null; U.draft = null; render(); },
+  back: () => { const wasShare = U.route && U.route.name === 'share'; leaveRoute(); if (!wasShare) U.draft = null; render(); restoreScroll(); },
   'sheet-close': () => closeSheet(),
   'open-create': el => { U.draft = draftDefault(el.dataset.demo === '1'); go({ name: 'create' }); },
   'open-attach': () => { if (!S.settings.clientId) { toast('Add your Google Client ID in Settings first.'); return; } openAttach(); },
@@ -1161,7 +1254,7 @@ const ACT = {
   create: () => doCreate(),
   'share-native': () => { const t = U.shareText; if (navigator.share) navigator.share({ text: t }).catch(() => {}); else copyText(t, 'Message copied. Paste it in any app.'); },
   'copy-share': () => copyText(U.shareText, 'Message copied'),
-  'to-board': () => { U.route = null; U.tab = 'meet'; render(); },
+  'to-board': () => { leaveRoute(); U.tab = 'meet'; render(); window.scrollTo(0, 0); },
   'go-share': () => { U.shareText = null; go({ name: 'share' }); },
   'board-tab': el => { U.boardTab = el.dataset.k; renderMain(); },
   sync: () => { if (!S.session) return; S.session.error = null; syncNow(); },
@@ -1179,8 +1272,17 @@ const ACT = {
   },
   ignore: () => { const key = $('.sheet').dataset.key; const s = S.session; if (s.ignored[key]) delete s.ignored[key]; else s.ignored[key] = true; save(); closeSheet(); render(); },
   'call-sheet': el => openCall(+el.dataset.code),
-  called: el => { const s = S.session; if (s) { s.called[+el.dataset.code] = now(); save(); setTimeout(() => { if (!$('#layer .sheet')) renderMain(); }, 600); } },
-  'toggle-called': el => { const s = S.session, c = +el.dataset.code; if (s.called[c]) delete s.called[c]; else s.called[c] = now(); save(); closeSheet(); renderMain(); },
+  'call-status': el => {
+    const code = +el.dataset.code, status = el.dataset.status;
+    const pc = S.pendingCall && S.pendingCall.code === code ? S.pendingCall : {};
+    const inFeedback = !!(S.pendingCall && S.pendingCall.code === code);
+    const { prev, label } = setCallStatus(code, status, { who: pc.who, num: pc.num, keepTime: !inFeedback && !!callOf(code) });
+    if ($('#layer .sheet') && (inFeedback || !U.route)) closeSheet(); 
+    renderMain();
+    if (status === 'clear') toast(label + ': call status cleared', () => { if (prev) S.calls[code] = prev; save(); renderMain(); });
+    else toast(`${label}: ${CALL_STATUS[status].label}`, () => { if (prev) S.calls[code] = prev; else delete S.calls[code]; save(); renderMain(); });
+  },
+  'reset-calls': async () => { if (await confirmSheet('Start a new calling round?', 'All call statuses (informed, recall later, no answer, denied) are cleared so you can start fresh before the next VC.', 'Clear statuses', true)) { S.calls = {}; S.pendingCall = null; save(); renderMain(); toast('Call statuses cleared'); } },
   copy: el => copyText(el.dataset.v, 'Number copied'),
   'session-menu': () => openSessionMenu(),
   'edit-expected': () => { closeSheet(true); U.draft = { expected: S.session.expected.slice() }; U.sessionDraft = U.draft; openExpected(); },
@@ -1213,7 +1315,7 @@ document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const a = el.dataset.act;
-  if (a === 'called') { ACT.called(el); return; }
+  if (a === 'dial') { startCall(el); return; } // let the phone dialer open
   if (el.tagName === 'A' && !el.getAttribute('href')?.startsWith('#')) return;
   e.preventDefault();
   ACT[a] && ACT[a](el, e);
@@ -1235,6 +1337,35 @@ document.addEventListener('change', e => {
 document.addEventListener('submit', e => { if (e.target.id === 'create-form') { e.preventDefault(); doCreate(); } });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
 
+/* ───────────────────────── swipe between tabs ───────────────────────── */
+function swipeTabs(dir) {
+  if (U.tab === 'dir') {
+    const order = ['branches', 'ro', 'linked']; const i = order.indexOf(U.dirFilter) + dir;
+    if (i < 0 || i >= order.length) return;
+    U.dirFilter = order[i];
+  } else {
+    const order = ['miss', 'left', 'in', 'people']; const i = order.indexOf(U.boardTab) + dir;
+    if (i < 0 || i >= order.length) return;
+    U.boardTab = order[i];
+  }
+  U.slide = dir; renderMain();
+}
+(() => {
+  let x0 = 0, y0 = 0, t0 = 0, ok = false;
+  const main = $('#main');
+  main.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    ok = e.touches.length === 1 && !U.route && (U.tab === 'dir' || (U.tab === 'meet' && !!S.session)) && !e.target.closest('.picks,.untagged-list,input,textarea,select');
+    x0 = t.clientX; y0 = t.clientY; t0 = Date.now();
+  }, { passive: true });
+  main.addEventListener('touchend', e => {
+    if (!ok) return; ok = false;
+    const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.6 || Date.now() - t0 > 700) return;
+    swipeTabs(dx < 0 ? 1 : -1);
+  }, { passive: true });
+})();
+
 /* ───────────────────────── toast, wake lock, timers ───────────────────────── */
 let toastTimer = null;
 function toast(msg, undo) {
@@ -1251,13 +1382,27 @@ async function manageWake() {
     else if (!want && U.wake) { await U.wake.release(); U.wake = null; }
   } catch (e) { U.wake = null; }
 }
-document.addEventListener('visibilitychange', () => { manageWake(); if (!document.hidden && S.session && !S.session.ended) syncNow(); });
+function startCall(el) {
+  S.pendingCall = { code: +el.dataset.code, who: el.dataset.who || '', num: el.dataset.num || '', at: now() };
+  save(); U.leftForCall = false;
+  if ($('#layer .sheet')) closeSheet(true);
+  // Phones hide the page when the dialer opens. If that never happens (desktop), ask anyway.
+  setTimeout(() => { if (S.pendingCall && !U.leftForCall && !document.hidden) openCallFeedback(); }, 4000);
+}
+document.addEventListener('visibilitychange', () => {
+  manageWake();
+  if (document.hidden) { if (S.pendingCall) U.leftForCall = true; return; }
+  if (S.pendingCall && U.leftForCall) { U.leftForCall = false; setTimeout(openCallFeedback, 350); }
+  if (S.session && !S.session.ended) syncNow();
+});
 setInterval(() => { $$('[data-ago]').forEach(el => { el.textContent = ago(+el.dataset.ago || 0); }); }, 5000);
 
 /* ───────────────────────── boot ───────────────────────── */
 if ('serviceWorker' in navigator && /^https:|^http:\/\/localhost/.test(location.href)) navigator.serviceWorker.register('sw.js').catch(() => {});
 checkPersist().then(() => { if (U.tab === 'settings') renderMain(); });
+try { history.replaceState({ rc: 'root' }, ''); history.pushState({ rc: 'guard' }, ''); } catch (e) {}
 render();
 if (S.session && !S.session.ended) syncNow();
+if (S.pendingCall) setTimeout(openCallFeedback, 600); // app was reloaded while the call was on
 window.__rc = { S, board, suggest };
 })();
