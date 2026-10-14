@@ -1243,73 +1243,77 @@ function drawAttendance() {
     c.fillStyle = P.bg; c.fillRect(0, 0, W, c.canvas.height);
 
     /* header */
-    const ag = s.details.agenda ? wrap(s.details.agenda, W - 2 * pad, 500, 32, 2) : [];
+    const ag = s.details.agenda ? wrap(s.details.agenda, W - 2 * pad, 500, 30, 2) : [];
     const meta = [];
-    if (s.details.when) meta.push(fmtWhen(s.details.when));
-    if (s.details.headedBy) meta.push('Headed by ' + s.details.headedBy);
+    const l1 = [s.details.when ? fmtWhen(s.details.when) : '', s.details.headedBy ? 'Headed by ' + s.details.headedBy : ''].filter(Boolean).join('  ·  ');
+    if (l1) meta.push(l1);
     if (t0) meta.push(`In meeting ${fmtClock(t0)} – ${live ? 'now' : fmtClock(t1)}  ·  ${fmtDur(t1 - t0)}${live ? ' so far' : ''}`);
-    const headH = 44 + 22 + 24 + 60 + (ag.length ? 14 + ag.length * 42 : 0) + 18 + meta.length * 40 + 34;
+    const headH = 36 + 20 + 14 + 52 + (ag.length ? 8 + ag.length * 38 : 0) + 10 + meta.length * 36 + 26;
     const g = c.createLinearGradient(0, 0, W, headH); g.addColorStop(0, '#13296B'); g.addColorStop(1, '#1F49B6');
     c.fillStyle = g; c.fillRect(0, 0, W, headH);
-    let y = 44 + 22;
-    c.letterSpacing = '3px'; txt('RO UDAIPUR  ·  CENTRAL BANK OF INDIA', pad, y, { w: 600, sz: 21, col: 'rgba(255,255,255,.72)' }); c.letterSpacing = '0px';
-    y += 24 + 60; txt('VC Attendance', pad, y, { w: 700, sz: 60, col: '#FFFFFF' });
-    if (ag.length) { y += 14; for (const l of ag) { y += 42; txt(l, pad, y - 6, { w: 500, sz: 32, col: 'rgba(255,255,255,.92)' }); } }
-    y += 18;
-    for (const m of meta) { y += 40; txt(m, pad, y - 10, { w: 500, sz: 27, col: 'rgba(255,255,255,.8)' }); }
-    y = headH + 28;
+    let y = 36 + 20;
+    c.letterSpacing = '3px'; txt('RO UDAIPUR  ·  CENTRAL BANK OF INDIA', pad, y, { w: 600, sz: 19, col: 'rgba(255,255,255,.72)' }); c.letterSpacing = '0px';
+    y += 14 + 52; txt('VC Attendance', pad, y, { w: 700, sz: 52, col: '#FFFFFF' });
+    if (ag.length) { y += 8; for (const l of ag) { y += 38; txt(l, pad, y - 8, { w: 500, sz: 30, col: 'rgba(255,255,255,.92)' }); } }
+    y += 10;
+    for (const m of meta) { y += 36; txt(m, pad, y - 9, { w: 500, sz: 25, col: 'rgba(255,255,255,.8)', max: W - 2 * pad }); }
+    y = headH + 22;
 
     /* totals */
     const pct = b.total ? Math.round(100 * b.joined / b.total) : 0;
-    card(pad, y, W - 2 * pad, 262);
-    txt(`${b.joined}/${b.total}`, pad + 32, y + 84, { w: 700, sz: 68 });
-    txt('branches joined', pad + 32, y + 122, { w: 500, sz: 27, col: P.muted });
-    txt(pct + '%', W - pad - 32, y + 84, { w: 700, sz: 68, col: P.acc, al: 'right' });
-    fillRR(pad + 32, y + 144, W - 2 * pad - 64, 16, 8, P.line);
-    if (pct) fillRR(pad + 32, y + 144, Math.max(16, (W - 2 * pad - 64) * pct / 100), 16, 8, P.in);
+    const cardH = 176;
+    card(pad, y, W - 2 * pad, cardH);
+    txt(`${b.joined}/${b.total}`, pad + 28, y + 62, { w: 700, sz: 54 });
+    txt('branches joined', pad + 28 + 8 + (c.measureText(`${b.joined}/${b.total}`).width), y + 60, { w: 500, sz: 25, col: P.muted });
+    txt(pct + '%', W - pad - 28, y + 62, { w: 700, sz: 54, col: P.acc, al: 'right' });
+    fillRR(pad + 28, y + 82, W - 2 * pad - 56, 14, 7, P.line);
+    if (pct) fillRR(pad + 28, y + 82, Math.max(14, (W - 2 * pad - 56) * pct / 100), 14, 7, P.in);
     const tl = [['In meeting', b.inCount, P.in], ['Joined & left', b.leftCount, P.left], ['Not joined', b.missCount, P.miss]];
-    const colW = (W - 2 * pad - 64) / 3;
-    tl.forEach(([lab, n, col], i) => { const x = pad + 32 + i * colW; txt(n, x, y + 212, { w: 700, sz: 40, col }); txt(lab, x, y + 244, { w: 500, sz: 22, col: P.muted }); });
-    y += 262 + 34;
+    const colW = (W - 2 * pad - 56) / 3;
+    tl.forEach(([lab, n, col], i) => { const x = pad + 28 + i * colW; txt(n, x, y + 146, { w: 700, sz: 38, col }); const nw = c.measureText(String(n)).width; txt(lab, x + nw + 10, y + 145, { w: 500, sz: 22, col: P.muted }); });
+    y += cardH + 26;
 
     /* sections */
     const head = (title, n, col, soft) => {
-      fillRR(pad, y, 14, 14, 7, col); y += 12;
-      txt(title, pad + 28, y + 6, { w: 700, sz: 32, col: P.ink });
-      fillRR(W - pad - 84, y - 24, 84, 44, 22, soft); txt(n, W - pad - 42, y + 8, { w: 700, sz: 26, col, al: 'center' });
-      y += 44;
+      fillRR(pad, y + 6, 14, 14, 7, col);
+      txt(title, pad + 28, y + 24, { w: 700, sz: 28, col: P.ink });
+      fillRR(W - pad - 64, y - 2, 64, 36, 18, soft); txt(n, W - pad - 32, y + 25, { w: 700, sz: 22, col, al: 'center' });
+      y += 52;
     };
-    const rows = (list, col, soft) => {
-      for (const r of list) {
-        card(pad, y, W - 2 * pad, 92, col);
-        txt(r.name, pad + 34, y + 40, { w: 600, sz: 32, max: W - 2 * pad - 34 - 230 });
-        txt((r.code ? r.code + '  ·  ' : '') + (r.people || ''), pad + 34, y + 74, { w: 400, sz: 25, col: P.muted, max: W - 2 * pad - 34 - 230 });
-        txt(fmtDur(r.dur), W - pad - 28, y + 42, { w: 700, sz: 34, col, al: 'right' });
-        txt(r.now ? 'in meeting' : r.lastLeft ? 'left ' + fmtClock(r.lastLeft) : '', W - pad - 28, y + 74, { w: 500, sz: 23, col: P.muted, al: 'right' });
-        y += 92 + 12;
-      }
-    };
-    if (inRows.length) { head('In meeting', inRows.length, P.in, P.inS); y += 8; rows(inRows, P.in); y += 18; }
-    if (leftRows.length) { head('Joined & left', leftRows.length, P.left, P.leftS); y += 8; rows(leftRows, P.left); y += 18; }
-    if (others.length) { head('Not linked to a branch', others.length, P.acc, '#E3E9FA'); y += 8; rows(others, P.acc); y += 18; }
-    if (miss.length) {
-      head('Not joined', miss.length, P.miss, P.missS); y += 8;
-      const cw = (W - 2 * pad - 14) / 2;
-      miss.forEach((m, i) => {
-        const x = pad + (i % 2) * (cw + 14), yy = y + Math.floor(i / 2) * 74;
-        fillRR(x, yy, cw, 62, 14, P.missS);
-        txt(m.name, x + 22, yy + 40, { w: 600, sz: 28, col: P.ink, max: cw - 44 - 92 });
-        txt(m.code, x + cw - 22, yy + 40, { w: 500, sz: 24, col: P.miss, al: 'right' });
+    const GAP = 12, cw = (W - 2 * pad - GAP) / 2, RH = 80;
+    const rows = (list, col) => {
+      list.forEach((r, i) => {
+        const x = pad + (i % 2) * (cw + GAP), yy = y + Math.floor(i / 2) * (RH + GAP);
+        card(x, yy, cw, RH, col);
+        const rightW = 112;
+        txt(r.name, x + 26, yy + 34, { w: 600, sz: 27, max: cw - 26 - rightW });
+        txt((r.code ? r.code + ' · ' : '') + (r.people || ''), x + 26, yy + 63, { w: 400, sz: 20, col: P.muted, max: cw - 26 - rightW });
+        txt(fmtDur(r.dur), x + cw - 18, yy + 34, { w: 700, sz: 28, col, al: 'right' });
+        txt(r.now ? 'in meeting' : r.lastLeft ? 'left ' + fmtClock(r.lastLeft) : '', x + cw - 18, yy + 63, { w: 500, sz: 19, col: P.muted, al: 'right' });
       });
-      y += Math.ceil(miss.length / 2) * 74 + 14;
+      y += Math.ceil(list.length / 2) * (RH + GAP) + 8;
+    };
+    if (inRows.length) { head('In meeting', inRows.length, P.in, P.inS); rows(inRows, P.in); }
+    if (leftRows.length) { head('Joined & left', leftRows.length, P.left, P.leftS); rows(leftRows, P.left); }
+    if (others.length) { head('Not linked to a branch', others.length, P.acc, '#E3E9FA'); rows(others, P.acc); }
+    if (miss.length) {
+      head('Not joined', miss.length, P.miss, P.missS);
+      const cw3 = (W - 2 * pad - 2 * 10) / 3;
+      miss.forEach((m, i) => {
+        const x = pad + (i % 3) * (cw3 + 10), yy = y + Math.floor(i / 3) * 56;
+        fillRR(x, yy, cw3, 46, 12, P.missS);
+        txt(m.name, x + 16, yy + 30, { w: 600, sz: 23, col: P.ink, max: cw3 - 32 - 56 });
+        txt(m.code, x + cw3 - 14, yy + 30, { w: 500, sz: 19, col: P.miss, al: 'right' });
+      });
+      y += Math.ceil(miss.length / 3) * 56 + 8;
     }
     if (!inRows.length && !leftRows.length && !others.length && !miss.length) { txt('Nobody has joined yet.', pad, y + 40, { sz: 30, col: P.muted }); y += 80; }
 
     /* footer */
-    y += 8; c.fillStyle = P.line; c.fillRect(pad, y, W - 2 * pad, 2); y += 40;
+    y += 4; c.fillStyle = P.line; c.fillRect(pad, y, W - 2 * pad, 2); y += 34;
     txt(`Generated ${new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}  ·  RO Roll Call`, W / 2, y, { sz: 22, col: P.faint, al: 'center' });
-    y += 34; txt('Time = first join to last leave', W / 2, y, { sz: 20, col: P.faint, al: 'center' });
-    return y + 40;
+    y += 30; txt('Time = first join to last leave', W / 2, y, { sz: 20, col: P.faint, al: 'center' });
+    return y + 32;
   };
   const cv = document.createElement('canvas'); cv.width = W; cv.height = 300;
   const H = paint(cv.getContext('2d'));
