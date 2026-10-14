@@ -603,9 +603,9 @@ function viewHome() {
   const nUnits = S.units.filter(u => u.expect).length;
   if (!S.units.length) return `
     <section class="card hero">
-      <h2>Load your branch list</h2>
-      <p>Import <span class="mono">udairo.js</span> to add the branches and staff of Udaipur RO. It stays on this phone.</p>
-      <button class="btn btn-primary btn-block" data-act="import">${I.up}Import udairo.js</button>
+      <h2>Load your staff list</h2>
+      <p>Pick the staff list file (<span class="mono">udairo.js</span>) to add the branches and staff of Udaipur RO. It stays on this phone.</p>
+      <button class="btn btn-primary btn-block" data-act="import-staff">${I.up}Load staff list</button>
     </section>`;
   return `
     <section class="card hero">
@@ -787,7 +787,8 @@ function viewDirectory() {
   return `
   <div class="search-wrap">${I.search}<input class="input" id="dir-q" type="search" placeholder="Search branch, name, code or emp ID" value="${esc(U.dirQ)}" autocomplete="off"></div>
   <div class="seg" role="group">${[['branches', 'Branches'], ['ro', 'RO staff'], ['linked', 'Linked accounts']].map(([k, l]) => `<button aria-pressed="${U.dirFilter === k}" data-act="dir-filter" data-k="${k}">${l}</button>`).join('')}</div>
-  <section class="card list" id="dir-list">${dirList()}</section>`;
+  <section class="card list" id="dir-list">${dirList()}</section>
+  <p class="hint" style="text-align:center;margin:4px 0 0">Staff transferred? <button data-act="import-staff" style="border:0;background:none;padding:0;color:var(--accent);font:inherit;font-weight:600">Update staff list</button></p>`;
 }
 function linkedCount(personIdOrUnit) {
   let n = 0; for (const k in S.idents) { const t = S.idents[k].to; if (t.p === personIdOrUnit || t.u === personIdOrUnit) n++; } return n;
@@ -862,7 +863,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 15;
+const APP_VERSION = 16;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -916,6 +917,13 @@ function viewSettings() {
     <div class="setting"><div class="grow"><div class="title">Default host controls</div><div class="sub">${accessLabel(c.access)} access${c.moderation ? ` · chat ${c.chat === 'HOSTS_ONLY' ? 'hosts only' : 'everyone'} · screen share ${c.present === 'HOSTS_ONLY' ? 'hosts only' : 'everyone'}` : ' · host management off'}</div></div></div>
   </section>
 
+  <div class="sec-label">Staff list</div>
+  <section class="card pad" style="display:flex;flex-direction:column;gap:10px">
+    <div class="row"><div class="grow"><div class="title">${S.units.filter(u => !u.isRO).length} branches · ${personById.size} staff</div><div class="sub">${S.staffAt ? 'Updated ' + ago(S.staffAt) : 'Loaded from your staff list file'}</div></div>
+      <button class="btn btn-primary" data-act="import-staff">${I.up}Update</button></div>
+    <span class="hint">After transfers or postings, pick the new <span class="mono">udairo.js</span> here. Tags stay with each person, and you see what changed before anything is replaced.</span>
+  </section>
+
   <div class="sec-label">Data on this phone</div>
   <section class="card list">
     <div class="setting">${I.shield.replace('<svg', '<svg style="width:22px;height:22px;color:' + (persisted ? 'var(--in)' : 'var(--faint)') + '"')}<div class="grow"><div class="title">${persisted ? 'Storage protected' : 'Storage not protected'}</div><div class="sub">${persisted ? 'The browser won\'t clear your tags to free space.' : 'Allow it so the browser never clears your tags to free space.'}</div></div>${persisted ? '' : `<button class="btn btn-soft" data-act="persist">Allow</button>`}</div>
@@ -923,7 +931,7 @@ function viewSettings() {
     <div class="pad" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-top:0">
       <button class="btn btn-soft" data-act="export" data-kind="full">${I.down}Full backup</button>
       <button class="btn btn-soft" data-act="export" data-kind="map">${I.down}Mappings only</button>
-      <button class="btn btn-ghost" data-act="import" style="grid-column:1/-1">${I.up}Import backup, mappings or udairo.js</button>
+      <button class="btn btn-ghost" data-act="import" style="grid-column:1/-1">${I.up}Restore a backup or mappings file</button>
     </div>
     <div class="setting"><div class="grow"><div class="title">${Object.keys(S.idents).length} linked accounts</div><div class="sub">${S.units.length} offices · ${personById.size} staff</div></div><button class="btn btn-danger" data-act="clear-maps" ${Object.keys(S.idents).length ? '' : 'disabled'}>Clear</button></div>
     ${window.SEED_DATA ? `<div class="setting"><div class="grow"><div class="title">Reset directory</div><div class="sub">Restore the built-in branch and staff list. Your tags stay.</div></div><button class="btn btn-ghost" data-act="reset-dir">Reset</button></div>` : ''}
@@ -1408,21 +1416,36 @@ function exportData(kind) {
   $('#ex-dl').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); closeSheet(); finish(); toast('Backup downloaded'); };
   $('#ex-share').onclick = () => navigator.share({ files: [file], title: name }).then(() => { closeSheet(); finish(); toast('Backup sent'); }).catch(() => {});
 }
-function pickImport() {
+function staffDiff(oldUnits, newUnits) {
+  const where = us => { const m = new Map(); us.forEach(u => u.staff.forEach(p => m.set(String(p.empId), { name: p.name, unit: u.name }))); return m; };
+  const a = where(oldUnits), b = where(newUnits);
+  let added = 0, left = 0, moved = 0;
+  b.forEach((v, k) => { if (!a.has(k)) added++; else if (a.get(k).unit !== v.unit) moved++; });
+  a.forEach((v, k) => { if (!b.has(k)) left++; });
+  return { added, left, moved };
+}
+function pickImport(kind) {
   const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.json,.js,application/json,text/javascript';
   inp.onchange = async () => {
     const f = inp.files[0]; if (!f) return;
     const text = await f.text();
     try {
+      if (kind === 'staff' && !/UDAIRO_DATA/.test(text)) { toast('That is not the staff list file. Please pick udairo.js.'); return; }
       if (/UDAIRO_DATA/.test(text)) {
         const D = new Function(text + ';return UDAIRO_DATA;')();
         const units = unitsFromUdairo(D);
         const nStaff = units.reduce((a, u) => a + u.staff.length, 0);
         if (!units.length) throw new Error();
-        if (S.units.length && !(await confirmSheet('Update the directory?', `Load <b>${units.length}</b> offices and <b>${nStaff}</b> staff from ${esc(f.name)}. Tags stay with each person because they follow the emp ID. Edits you made in the app are replaced by the file.`, 'Update directory'))) return;
+        let chg = '';
+        if (S.units.length) {
+          const d = staffDiff(S.units, units);
+          const bits = [d.added && `<b>${d.added}</b> new`, d.moved && `<b>${d.moved}</b> moved to another office`, d.left && `<b>${d.left}</b> no longer listed`].filter(Boolean);
+          chg = bits.length ? ` Changes: ${bits.join(', ')}.` : ' No staff changes found.';
+        }
+        if (S.units.length && !(await confirmSheet('Update the staff list?', `Load <b>${units.length}</b> offices and <b>${nStaff}</b> staff from ${esc(f.name)}.${chg} Tags stay with each person because they follow the emp ID. Edits you made in the app's directory are replaced.`, 'Update staff list'))) return;
         const keep = new Map(S.units.map(u => [u.code, u.expect]));
         units.forEach(u => { if (keep.has(u.code)) u.expect = keep.get(u.code); });
-        S.units = units; reindex(); markDirty(); save(); render(); toast(`Loaded ${units.length} offices and ${nStaff} staff`);
+        S.units = units; S.staffAt = now(); reindex(); markDirty(); save(); render(); toast(`Staff list updated: ${units.length} offices, ${nStaff} staff`);
         return;
       }
       const j = JSON.parse(text);
@@ -1436,7 +1459,7 @@ function pickImport() {
         delete S.settings.theme;
         S.backup = { at: now(), dirty: 0 }; reindex(); save(); render(); toast('Backup restored');
       } else throw new Error();
-    } catch (e) { toast('That file isn\'t a Hazri backup or udairo.js.'); }
+    } catch (e) { toast(kind === 'staff' ? 'Could not read that staff list file.' : 'That file isn\'t a Hazri backup or mappings file.'); }
   };
   inp.click();
 }
@@ -1486,6 +1509,7 @@ const ACT = {
   'session-menu': () => openSessionMenu(),
   'edit-expected': () => { closeSheet(true); U.draft = { expected: S.session.expected.slice() }; U.sessionDraft = U.draft; openExpected(); },
   'edit-details': () => { closeSheet(true); openDetailsEdit(); },
+  'import-staff': () => pickImport('staff'),
   'check-update': () => checkUpdate(true),
   'apply-update': () => applyUpdate(),
   'attendance-image': () => { closeSheet(true); openAttendanceImage(); },
