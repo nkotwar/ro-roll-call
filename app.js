@@ -541,7 +541,7 @@ async function syncNow() {
 }
 
 /* ───────────────────────── UI state ───────────────────────── */
-const U = { tab: 'meet', route: null, boardTab: 'miss', dirQ: '', dirFilter: 'branches', flash: new Set(), draft: null, wake: null };
+const U = { tab: (() => { try { const t = sessionStorage.getItem('rc.tab'); sessionStorage.removeItem('rc.tab'); return t === 'settings' ? t : 'meet'; } catch (e) { return 'meet'; } })(), route: null, boardTab: 'miss', dirQ: '', dirFilter: 'branches', flash: new Set(), draft: null, wake: null };
 
 let navDepth = 0, ignorePop = 0, exiting = false, sheetNav = false, pendingSheetPop = false;
 function navPush() { try { history.pushState({ rc: 'nav' }, ''); navDepth++; } catch (e) {} }
@@ -864,7 +864,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 13;
+const APP_VERSION = 14;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -879,8 +879,12 @@ async function checkUpdate(force) {
   if (U.tab === 'settings' && !U.route) renderMain();
 }
 async function applyUpdate() {
+  U.update = { ...(U.update || {}), busy: true }; renderMain();
   try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.unregister())); } catch (e) {}
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } catch (e) {}
+  // GitHub Pages lets the browser keep files for ~10 minutes. Force fresh copies into the browser cache before reloading.
+  await Promise.all(['./', 'index.html', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'cbi-emblem.png'].map(f => fetch(f, { cache: 'reload' }).catch(() => {})));
+  try { sessionStorage.setItem('rc.tab', 'settings'); } catch (e) {}
   location.reload();
 }
 function versionCard() {
