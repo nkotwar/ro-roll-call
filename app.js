@@ -859,8 +859,37 @@ async function requestPersist(silent) {
   } catch (e) { if (!silent) toast('Could not protect storage.'); }
   if (U.tab === 'settings') renderMain();
 }
+/* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
+const APP_VERSION = 11;
+async function checkUpdate(force) {
+  if (U.update && U.update.busy) return;
+  if (U.update && !force && Date.now() - U.update.at < 60e3) return;
+  U.update = { busy: true, at: Date.now(), latest: (U.update || {}).latest };
+  if (U.tab === 'settings' && !U.route) renderMain();
+  try {
+    const r = await fetch('sw.js?cb=' + Date.now(), { cache: 'no-store' });
+    const m = /rollcall-v(\d+)/.exec(await r.text());
+    if (!m) throw new Error('no version');
+    U.update = { at: Date.now(), latest: +m[1] };
+  } catch (e) { U.update = { at: Date.now(), error: true }; }
+  if (U.tab === 'settings' && !U.route) renderMain();
+}
+async function applyUpdate() {
+  try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.unregister())); } catch (e) {}
+  try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } catch (e) {}
+  location.reload();
+}
+function versionCard() {
+  const u = U.update || {};
+  const newer = u.latest && u.latest > APP_VERSION;
+  const sub = u.busy ? 'Checking for updates…' : u.error ? 'Could not check. Are you online?' : newer ? `Version ${u.latest} is available` : u.latest ? 'You have the latest version' : 'Not checked yet';
+  const btn = newer ? `<button class="btn btn-primary" data-act="apply-update">${I.refresh}Update now</button>` : `<button class="btn btn-ghost" data-act="check-update" ${u.busy ? 'disabled' : ''}>${I.refresh}Check</button>`;
+  return `<div class="sec-label">App</div>
+  <section class="card list"><div class="setting"><div class="grow"><div class="title">Version ${APP_VERSION}</div><div class="sub">${sub}</div></div>${btn}</div></section>`;
+}
 function viewSettings() {
   renderTop('Settings');
+  setTimeout(checkUpdate, 0);
   const st = S.settings, c = st.controls;
   const signed = G.valid() || st.signedIn;
   return `
@@ -893,6 +922,7 @@ function viewSettings() {
     <div class="setting"><div class="grow"><div class="title">${Object.keys(S.idents).length} linked accounts</div><div class="sub">${S.units.length} offices · ${personById.size} staff</div></div><button class="btn btn-danger" data-act="clear-maps" ${Object.keys(S.idents).length ? '' : 'disabled'}>Clear</button></div>
     ${window.SEED_DATA ? `<div class="setting"><div class="grow"><div class="title">Reset directory</div><div class="sub">Restore the built-in branch and staff list. Your tags stay.</div></div><button class="btn btn-ghost" data-act="reset-dir">Reset</button></div>` : ''}
   </section>
+  ${versionCard()}
   <p class="hint" style="text-align:center;margin:8px 0 0">RO Roll Call · built by Nitin Kotwar (139535), via PDUDAIRO</p>`;
 }
 
@@ -1443,6 +1473,8 @@ const ACT = {
   'session-menu': () => openSessionMenu(),
   'edit-expected': () => { closeSheet(true); U.draft = { expected: S.session.expected.slice() }; U.sessionDraft = U.draft; openExpected(); },
   'edit-details': () => { closeSheet(true); openDetailsEdit(); },
+  'check-update': () => checkUpdate(true),
+  'apply-update': () => applyUpdate(),
   'attendance-image': () => { closeSheet(true); openAttendanceImage(); },
   'copy-summary': () => { copyText(summaryText(), 'Attendance summary copied'); closeSheet(); },
   'end-session': async () => { closeSheet(true); if (await confirmSheet('Close this session?', 'The board for <b>' + esc(S.session.meetingCode) + '</b> will be cleared. Tags you saved stay on this phone.', 'Close session', true)) { clearTimeout(syncTimer); S.session = null; save(); render(); } },
