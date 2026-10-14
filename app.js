@@ -803,6 +803,7 @@ function dirList() {
   if (U.dirFilter === 'ro') {
     const ro = S.units.find(u => u.isRO); if (!ro) return `<div class="empty">No Regional Office in the directory.</div>`;
     const staff = ro.staff.filter(p => !q || (p.name + ' ' + p.designation + ' ' + p.dept + ' ' + p.empId).toLowerCase().includes(q));
+    staff.sort((x, y) => pretty(x.name).localeCompare(pretty(y.name), 'en', { sensitivity: 'base' }));
     return staff.map(p => personRow(p)).join('') || `<div class="empty">No RO staff match “${esc(U.dirQ)}”.</div>`;
   }
   const units = S.units.filter(u => !u.isRO);
@@ -863,7 +864,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 16;
+const APP_VERSION = 17;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
