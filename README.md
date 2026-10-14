@@ -1,4 +1,4 @@
-# RO Roll Call
+# Hazri
 
 A phone web app for the Udaipur Regional Office. It creates a Google Meet VC, shares the link with the time, agenda and who is heading it, and shows which branches have joined, joined and left, or not joined yet, with one-tap calling for the ones missing.
 

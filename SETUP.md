@@ -1,4 +1,4 @@
-# RO Roll Call: setup
+# Hazri: setup
 
 About 15 minutes, once. Everything here is free.
 
@@ -24,7 +24,7 @@ Testing mode is fine for one user. Google may ask you to sign in again about onc
 ## 4. Client ID
 
 1. **APIs & Services → Credentials → Create credentials → OAuth client ID** (or *Google Auth Platform → Clients → Create client*).
-2. Application type **Web application**, name `Roll Call web`.
+2. Application type **Web application**, name `Hazri web`.
 3. **Authorised JavaScript origins → Add URI**, then enter exactly:
    **`https://nkotwar.github.io`**
    Just the address, with no `/ro-roll-call` path and no slash at the end. Google only accepts the bare origin here.

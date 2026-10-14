@@ -1,17 +1,17 @@
 {
-  "name": "RO Roll Call",
-  "short_name": "Roll Call",
-  "description": "See which Udaipur RO branches have joined your Google Meet VC.",
+  "name": "Hazri",
+  "short_name": "Hazri",
+  "description": "VC attendance for Udaipur RO: see which branches have joined your Google Meet.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#F3F5F8",
-  "theme_color": "#1F49B6",
+  "theme_color": "#146CC0",
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
   ]
 }

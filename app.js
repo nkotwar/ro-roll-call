@@ -1,4 +1,4 @@
-/* RO Roll Call — tracks which branches have joined a Google Meet VC.
+/* Hazri — tracks which branches have joined a Google Meet VC.
    Built by Nitin Kotwar (139535), via PDUDAIRO. Everything is stored on this phone. */
 (() => {
 'use strict';
@@ -23,6 +23,7 @@ const I = {
   plus: svg('<path d="M12 5v14M5 12h14"/>'),
   link: svg('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'),
   play: svg('<path d="M7 5v14l11-7z"/>'),
+  video: svg('<rect x="3" y="6" width="12" height="12" rx="2.5"/><path d="m15 10.5 5.5-3v9l-5.5-3"/>'),
   phone: svg('<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>'),
   more: svg('<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>'),
   share: svg('<path d="M12 3v13"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>'),
@@ -97,13 +98,14 @@ function unitsFromUdairo(D) {
     }))
   });
 }
+const THEMES_OK = ['classic', 'cbi', 'neutral'];
 function fresh() {
   return {
     v: 1,
     units: window.SEED_DATA ? unitsFromSource(window.SEED_DATA) : [],
     idents: {},
     session: null,
-    settings: { clientId: DEFAULT_CLIENT_ID, controls: { ...DEFAULT_CONTROLS }, poll: 15, keepAwake: true, signedIn: false },
+    settings: { clientId: DEFAULT_CLIENT_ID, controls: { ...DEFAULT_CONTROLS }, poll: 15, keepAwake: true, signedIn: false, theme: 'classic' },
     recentAgendas: [],
     backup: { at: null, dirty: 0 }
   };
@@ -114,6 +116,8 @@ if (!S || S.v !== 1) S = fresh();
 S.settings = { ...fresh().settings, ...S.settings, controls: { ...DEFAULT_CONTROLS, ...(S.settings || {}).controls } };
 S.settings.clientId = cleanClientId(S.settings.clientId) || DEFAULT_CLIENT_ID;
 delete S.settings.controls.viewer; delete S.settings.unsupported;
+if (!THEMES_OK.includes(S.settings.theme)) S.settings.theme = 'classic';
+document.documentElement.dataset.brand = S.settings.theme;
 let saveFailed = false;
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); saveFailed = false; }
@@ -560,7 +564,7 @@ function handleBack() {
 }
 async function askExit() {
   const live = S.session && !S.session.ended;
-  if (await confirmSheet('Close Roll Call?', live ? 'The live board stops checking for joiners while the app is closed.' : 'You can open it again from your home screen.', 'Close app', true)) {
+  if (await confirmSheet('Close Hazri?', live ? 'The live board stops checking for joiners while the app is closed.' : 'You can open it again from your home screen.', 'Close app', true)) {
     pendingSheetPop = false; exiting = true;
     history.go(-(navDepth + 2));
     setTimeout(() => { exiting = false; }, 1500); // still here (plain browser tab): stay usable
@@ -573,7 +577,7 @@ function render() {
   manageWake();
 }
 function renderTop(title, { back = false, actions = '' } = {}) {
-  $('#top').innerHTML = `${back ? `<button class="back" data-act="back" aria-label="Back">${I.back}</button>` : ''}<h1>${esc(title)}</h1>${actions}`;
+  $('#top').innerHTML = `${back ? `<button class="back" data-act="back" aria-label="Back">${I.back}</button>` : S.settings.theme === 'cbi' ? '<img class="brand-mark" src="cbi-emblem.png" alt="">' : ''}<h1>${esc(title)}</h1>${actions}`;
 }
 function renderMain() {
   const m = $('#main');
@@ -596,7 +600,7 @@ function afterRender() {
 
 /* ───────────────────────── views: home ───────────────────────── */
 function viewHome() {
-  renderTop('RO Roll Call');
+  renderTop('Hazri');
   const ready = !!S.settings.clientId;
   const nUnits = S.units.filter(u => u.expect).length;
   if (!S.units.length) return `
@@ -699,7 +703,7 @@ function viewShare() {
       <button class="btn btn-primary" data-act="share-native">${I.share}Share…</button>
       <a class="btn btn-soft" id="wa-link" href="https://wa.me/?text=${encodeURIComponent(U.shareText)}" target="_blank" rel="noopener">${I.chat}WhatsApp</a>
       <button class="btn btn-ghost" data-act="copy-share">${I.copy}Copy</button>
-      <a class="btn btn-ghost" href="${esc(s.meetingUri)}" target="_blank" rel="noopener">${I.ext}Open Meet</a>
+      <a class="btn btn-ghost" href="${esc(s.meetingUri)}" target="_blank" rel="noopener">${I.video}Join</a>
     </div>
   </section>
   <button class="btn btn-primary btn-block" data-act="to-board">Go to live board</button>`;
@@ -728,7 +732,7 @@ function bmOf(u) { return u.staff.find(p => p.bm) || u.staff[0]; }
 function callNumber(u) { return u.mobile || u.phone || (bmOf(u) && bmOf(u).phone) || ''; }
 function viewBoard() {
   const s = S.session, b = board();
-  renderTop(s.source === 'demo' ? 'Demo meeting' : 'Live board', { actions: `<button class="icon-btn" data-act="go-share" aria-label="Share meeting">${I.share}</button><button class="icon-btn" data-act="session-menu" aria-label="Meeting options">${I.more}</button>` });
+  renderTop(s.source === 'demo' ? 'Demo meeting' : 'Live board', { actions: `${s.source === 'demo' ? '' : `<a class="join-btn" href="${esc(s.meetingUri)}" target="_blank" rel="noopener" aria-label="Join the meeting yourself">${I.video}Join</a>`}<button class="icon-btn" data-act="go-share" aria-label="Share meeting">${I.share}</button><button class="icon-btn" data-act="session-menu" aria-label="Meeting options">${I.more}</button>` });
   const d = s.details;
   const tabs = [['miss', 'Not joined', b.missCount], ['left', 'Joined & left', b.rows.left.length], ['in', 'In meeting', b.rows.in.length], ['people', 'People', b.people.length]];
   let list = '';
@@ -860,7 +864,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 11;
+const APP_VERSION = 12;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -902,6 +906,11 @@ function viewSettings() {
     </div>
   </section>
 
+  <div class="sec-label">Appearance</div>
+  <section class="card pad">
+    <div class="theme-grid">${[['classic', 'Classic blue', 'Default', 'linear-gradient(135deg,#13296B,#1F49B6)', false], ['cbi', 'Central Bank', 'Bank blue and emblem', 'linear-gradient(135deg,#0B4A8F,#146CC0)', true], ['neutral', 'Slate', 'Quiet and plain', 'linear-gradient(135deg,#1F2937,#475569)', false]].map(([k, l, d, bg, em]) => `<button class="theme-opt" aria-pressed="${st.theme === k}" data-act="set-theme" data-v="${k}"><span class="sw" style="background:${bg}">${em ? '<img src="cbi-emblem.png" alt="">' : ''}</span><b>${l}</b><span class="sub muted">${d}</span></button>`).join('')}</div>
+  </section>
+
   <div class="sec-label">During meetings</div>
   <section class="card list">
     <div class="setting"><div class="grow"><div class="title">Check for joiners every</div><div class="sub">Shorter is faster but uses more data</div></div>
@@ -923,7 +932,7 @@ function viewSettings() {
     ${window.SEED_DATA ? `<div class="setting"><div class="grow"><div class="title">Reset directory</div><div class="sub">Restore the built-in branch and staff list. Your tags stay.</div></div><button class="btn btn-ghost" data-act="reset-dir">Reset</button></div>` : ''}
   </section>
   ${versionCard()}
-  <p class="hint" style="text-align:center;margin:8px 0 0">RO Roll Call · built by Nitin Kotwar (139535), via PDUDAIRO</p>`;
+  <p class="hint" style="text-align:center;margin:8px 0 0">Hazri · built by Nitin Kotwar (139535), via PDUDAIRO</p>`;
 }
 
 /* ───────────────────────── sheets ───────────────────────── */
@@ -1232,6 +1241,8 @@ function summaryText() {
 /* ───────────────────────── attendance image ───────────────────────── */
 const fmtDur = ms => { const m = Math.round(Math.max(0, ms) / 60000); if (!ms) return '–'; if (m < 1) return '<1m'; const h = Math.floor(m / 60); return h ? `${h}h ${String(m % 60).padStart(2, '0')}m` : `${m}m`; };
 const fmtClock = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(/\s?(AM|PM)/i, m => m.toLowerCase());
+const EMB = { img: null };
+function loadEmblem() { return new Promise(res => { if (EMB.img) return res(EMB.img); const i = new Image(); i.onload = () => { EMB.img = i; res(i); }; i.onerror = () => res(null); i.src = 'cbi-emblem.png'; }); }
 function drawAttendance() {
   const s = S.session, b = board(), T = now();
   const stay = p => { const a = p.first ? Date.parse(p.first) : 0; if (!a) return 0; const z = p.active ? T : (p.lastEnd ? Date.parse(p.lastEnd) : T); return Math.max(0, z - a); };
@@ -1245,7 +1256,9 @@ function drawAttendance() {
   const ends = all.map(p => p.active ? T : (p.lastEnd && Date.parse(p.lastEnd))).filter(Boolean);
   const t0 = starts.length ? Math.min(...starts) : 0, t1 = ends.length ? Math.max(...ends) : 0;
   const live = all.some(p => p.active);
-  const P = { bg: '#F3F5F8', ink: '#142033', muted: '#5B6B80', faint: '#8A97A8', line: '#DCE2EA', card: '#FFFFFF', acc: '#1F49B6', in: '#12805C', inS: '#DDF3EA', left: '#A86A0F', leftS: '#FBEFD9', miss: '#C2412D', missS: '#FBE4DF' };
+  const BR = ({ cbi: { g: ['#0B4A8F', '#146CC0'], acc: '#146CC0', soft: '#E1EEFA' }, neutral: { g: ['#1F2937', '#475569'], acc: '#334155', soft: '#E6EAF0' } })[S.settings.theme] || { g: ['#13296B', '#1F49B6'], acc: '#1F49B6', soft: '#E3E9FA' };
+  const showEmblem = S.settings.theme === 'cbi' && EMB.img;
+  const P = { bg: '#F3F5F8', ink: '#142033', muted: '#5B6B80', faint: '#8A97A8', line: '#DCE2EA', card: '#FFFFFF', acc: BR.acc, in: '#12805C', inS: '#DDF3EA', left: '#A86A0F', leftS: '#FBEFD9', miss: '#C2412D', missS: '#FBE4DF' };
   const W = 1080, pad = 44, FONT = '"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
   const paint = c => {
@@ -1279,8 +1292,9 @@ function drawAttendance() {
     if (l1) meta.push(l1);
     if (t0) meta.push(`In meeting ${fmtClock(t0)} – ${live ? 'now' : fmtClock(t1)}  ·  ${fmtDur(t1 - t0)}${live ? ' so far' : ''}`);
     const headH = 36 + 20 + 14 + 52 + (ag.length ? 8 + ag.length * 38 : 0) + 10 + meta.length * 36 + 26;
-    const g = c.createLinearGradient(0, 0, W, headH); g.addColorStop(0, '#13296B'); g.addColorStop(1, '#1F49B6');
+    const g = c.createLinearGradient(0, 0, W, headH); g.addColorStop(0, BR.g[0]); g.addColorStop(1, BR.g[1]);
     c.fillStyle = g; c.fillRect(0, 0, W, headH);
+    if (showEmblem) { fillRR(W - pad - 96, 30, 96, 96, 22, '#FFFFFF'); const ih = 70 * EMB.img.height / EMB.img.width; c.drawImage(EMB.img, W - pad - 96 + 13, 30 + 48 - ih / 2, 70, ih); }
     let y = 36 + 20;
     c.letterSpacing = '3px'; txt('RO UDAIPUR  ·  CENTRAL BANK OF INDIA', pad, y, { w: 600, sz: 19, col: 'rgba(255,255,255,.72)' }); c.letterSpacing = '0px';
     y += 14 + 52; txt('VC Attendance', pad, y, { w: 700, sz: 52, col: '#FFFFFF' });
@@ -1325,7 +1339,7 @@ function drawAttendance() {
     };
     if (inRows.length) { head('In meeting', inRows.length, P.in, P.inS); rows(inRows, P.in); }
     if (leftRows.length) { head('Joined & left', leftRows.length, P.left, P.leftS); rows(leftRows, P.left); }
-    if (others.length) { head('Not linked to a branch', others.length, P.acc, '#E3E9FA'); rows(others, P.acc); }
+    if (others.length) { head('Not linked to a branch', others.length, P.acc, BR.soft); rows(others, P.acc); }
     if (miss.length) {
       head('Not joined', miss.length, P.miss, P.missS);
       const cw3 = (W - 2 * pad - 2 * 10) / 3;
@@ -1341,7 +1355,7 @@ function drawAttendance() {
 
     /* footer */
     y += 4; c.fillStyle = P.line; c.fillRect(pad, y, W - 2 * pad, 2); y += 34;
-    txt(`Generated ${new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}  ·  RO Roll Call`, W / 2, y, { sz: 22, col: P.faint, al: 'center' });
+    txt(`Generated ${new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}  ·  Hazri  ·  via PDUDAIRO`, W / 2, y, { sz: 22, col: P.faint, al: 'center' });
     y += 30; txt('Time = first join to last leave', W / 2, y, { sz: 20, col: P.faint, al: 'center' });
     return y + 32;
   };
@@ -1358,6 +1372,7 @@ async function openAttendanceImage() {
     <div class="sheet-body" id="ai-body"><p class="muted" style="margin:0">Preparing…</p></div>`);
   try { await Promise.race([document.fonts.load('600 30px "IBM Plex Sans"'), new Promise(r => setTimeout(r, 1500))]); } catch (e) {}
   let blob;
+  await loadEmblem();
   try { blob = await new Promise((res, rej) => drawAttendance().toBlob(b => b ? res(b) : rej(new Error('no image')), 'image/png')); }
   catch (e) { const bd = $('#ai-body'); if (bd) bd.innerHTML = `<div class="banner err">${I.alert}<div>Could not make the image on this phone. Use Copy as text instead.</div></div><button class="btn btn-soft btn-block" data-act="copy-summary">${I.copy}Copy as text</button>`; return; }
   const bd = $('#ai-body'); if (!bd) return;
@@ -1421,9 +1436,10 @@ function pickImport() {
       } else if (j.kind === 'rollcall-backup') {
         if (!(await confirmSheet('Restore this backup?', `This replaces the directory, linked accounts and settings on this phone with the backup from ${esc(new Date(j.exported).toLocaleString('en-IN'))}.`, 'Restore', true))) return;
         S.units = j.units || S.units; S.idents = j.idents || {}; S.settings = { ...S.settings, ...j.settings, signedIn: S.settings.signedIn }; S.recentAgendas = j.recentAgendas || [];
+        if (!THEMES_OK.includes(S.settings.theme)) S.settings.theme = 'classic'; document.documentElement.dataset.brand = S.settings.theme;
         S.backup = { at: now(), dirty: 0 }; reindex(); save(); render(); toast('Backup restored');
       } else throw new Error();
-    } catch (e) { toast('That file isn\'t a Roll Call backup or udairo.js.'); }
+    } catch (e) { toast('That file isn\'t a Hazri backup or udairo.js.'); }
   };
   inp.click();
 }
@@ -1473,6 +1489,7 @@ const ACT = {
   'session-menu': () => openSessionMenu(),
   'edit-expected': () => { closeSheet(true); U.draft = { expected: S.session.expected.slice() }; U.sessionDraft = U.draft; openExpected(); },
   'edit-details': () => { closeSheet(true); openDetailsEdit(); },
+  'set-theme': el => { if (!THEMES_OK.includes(el.dataset.v)) return; S.settings.theme = el.dataset.v; document.documentElement.dataset.brand = el.dataset.v; save(); render(); },
   'check-update': () => checkUpdate(true),
   'apply-update': () => applyUpdate(),
   'attendance-image': () => { closeSheet(true); openAttendanceImage(); },
