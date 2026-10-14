@@ -400,6 +400,8 @@ async function listAll(path) {
   }
   return out;
 }
+const IDLE_END_MS = 90 * 60e3;   // stop watching after the room has been empty this long
+const EMPTY_POLL_MS = 45e3;      // slow polling while the room is empty
 async function syncGoogle(s) {
   const space = await G.call(s.spaceName);
   let rec = space.activeConference && space.activeConference.conferenceRecord;
@@ -428,7 +430,15 @@ async function syncGoogle(s) {
     else seen[p.key] = p;
   }
   mergeParts(s, seen, rec);
-  s.ended = ended; s.state = ended ? 'ended' : 'live';
+  // A Meet link outlives its conferences: when the room empties Meet closes the conference and
+  // opens a new one when someone returns. So "ended" only means 1.5 h of nobody being present.
+  const anyActive = Object.values(s.parts).some(p => p.active);
+  if (anyActive) { s.emptySince = null; s.ended = false; s.state = 'live'; }
+  else {
+    if (!s.emptySince) s.emptySince = now();
+    if (now() - s.emptySince >= IDLE_END_MS) { s.ended = true; s.state = 'ended'; }
+    else { s.ended = false; s.state = 'empty'; }
+  }
 }
 function mergeParts(s, seen, rec) {
   // Participants from an earlier conference in the same meeting space stay (they joined, then left).
@@ -500,7 +510,7 @@ function scheduleSync(delay) {
   clearTimeout(syncTimer);
   const s = S.session;
   if (!s || s.ended) return;
-  const d = delay != null ? delay : (s.source === 'demo' ? 4000 : Math.max(10, S.settings.poll) * 1000);
+  const d = delay != null ? delay : (s.source === 'demo' ? 4000 : s.state === 'empty' ? Math.max(EMPTY_POLL_MS, S.settings.poll * 1000) : Math.max(10, S.settings.poll) * 1000);
   syncTimer = setTimeout(syncNow, d);
 }
 async function syncNow() {
@@ -705,7 +715,7 @@ function syncLine(s) {
     const re = s.error.code === 'reauth' || s.error.code === 'noclient';
     return `<div class="banner ${re ? 'warn' : 'err'}">${I.alert}<div class="grow">${esc(s.error.msg)}${re ? `<div style="margin-top:8px"><button class="btn btn-ghost" data-act="reconnect" style="min-height:38px;padding:8px 12px">${I.refresh}Reconnect</button></div>` : ''}</div></div>`;
   }
-  const label = s.ended ? `<span class="chip">Meeting ended</span>` : s.state === 'waiting' ? `<span class="chip acc"><span class="dot pulse"></span>Waiting for the first person</span>` : `<span class="chip in"><span class="dot pulse"></span>Live</span>`;
+  const label = s.ended ? `<span class="chip">Meeting ended</span>` : s.state === 'empty' ? `<span class="chip"><span class="dot"></span>Empty</span>` : s.state === 'waiting' ? `<span class="chip acc"><span class="dot pulse"></span>Waiting for the first person</span>` : `<span class="chip in"><span class="dot pulse"></span>Live</span>`;
   return `<div class="syncbar">${label}<span>Updated <span data-ago="${s.lastSync || ''}">${ago(s.lastSync)}</span></span><span class="grow"></span><button class="icon-btn" data-act="sync" aria-label="Refresh now" style="width:34px;height:34px">${I.refresh}</button></div>`;
 }
 function personChips(list, onlyActive) {
