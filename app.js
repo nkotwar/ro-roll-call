@@ -618,12 +618,7 @@ function viewHome() {
         <button class="btn btn-ghost btn-block" data-act="open-create" data-demo="1">${I.play}Try a demo meeting</button>
       </div>
     </section>
-    ${ready ? '' : `<div class="banner info">${I.info}<div><b>Google is not connected yet.</b> Demo meetings work now. To create real meetings, add your Client ID in <button class="btn-link" data-act="tab" data-tab="settings" style="border:0;background:none;padding:0;color:var(--accent);font-weight:600">Settings</button>.</div></div>`}
-    ${backupNudge()}`;
-}
-function backupNudge() {
-  if ((S.backup.dirty || 0) < 5) return '';
-  return `<div class="banner warn">${I.shield}<div class="grow"><b>${S.backup.dirty} changes since your last backup.</b> Save a copy so a phone reset doesn't lose your tags.<div style="margin-top:8px"><button class="btn btn-ghost" data-act="export" data-kind="full" style="min-height:38px;padding:8px 12px">${I.down}Save backup</button></div></div></div>`;
+    ${ready ? '' : `<div class="banner info">${I.info}<div><b>Google is not connected yet.</b> Demo meetings work now. To create real meetings, add your Client ID in <button class="btn-link" data-act="tab" data-tab="settings" style="border:0;background:none;padding:0;color:var(--accent);font-weight:600">Settings</button>.</div></div>`}`;
 }
 
 /* ───────────────────────── views: create + share ───────────────────────── */
@@ -864,7 +859,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 17;
+const APP_VERSION = 18;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
