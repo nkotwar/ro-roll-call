@@ -17,7 +17,7 @@
 /* Layout: one-column phone app shell — sticky header, scrolling content, bottom tab bar; widens to a centred 560px column on desktop. */
 :root{
   --bg:#F3F5F8; --surface:#FFFFFF; --surface-2:#EAEEF4; --ink:#142033; --muted:#5B6B80; --faint:#8A97A8; --line:#DCE2EA;
-  --accent:#1F49B6; --accent-ink:#FFFFFF; --accent-soft:#E3E9FA;
+  --accent:#146CC0; --accent-ink:#FFFFFF; --accent-soft:#E1EEFA;
   --in:#12805C; --in-soft:#DDF3EA; --left:#A86A0F; --left-soft:#FBEFD9; --miss:#C2412D; --miss-soft:#FBE4DF;
   --shadow:0 1px 2px rgba(20,32,51,.06),0 4px 16px rgba(20,32,51,.06);
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -27,34 +27,20 @@
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#0E141D; --surface:#161E2A; --surface-2:#1E2836; --ink:#E7ECF3; --muted:#9AA7B9; --faint:#6E7C90; --line:#283346;
-  --accent:#7D9BFF; --accent-ink:#0B1222; --accent-soft:#1E2A4A;
+  --accent:#5AA6EB; --accent-ink:#071729; --accent-soft:#12304D;
   --in:#3CC08E; --in-soft:#143327; --left:#E2A847; --left-soft:#3A2C12; --miss:#F0735C; --miss-soft:#3D1B16;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25); color-scheme:dark;}}
 :root[data-theme="dark"]{
   --bg:#0E141D; --surface:#161E2A; --surface-2:#1E2836; --ink:#E7ECF3; --muted:#9AA7B9; --faint:#6E7C90; --line:#283346;
-  --accent:#7D9BFF; --accent-ink:#0B1222; --accent-soft:#1E2A4A;
+  --accent:#5AA6EB; --accent-ink:#071729; --accent-soft:#12304D;
   --in:#3CC08E; --in-soft:#143327; --left:#E2A847; --left-soft:#3A2C12; --miss:#F0735C; --miss-soft:#3D1B16;
   --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.25); color-scheme:dark;}
 
-/* Brand themes: Settings → Appearance. Status colours (in / left / miss) never change. */
-:root[data-brand="cbi"]{--accent:#146CC0; --accent-soft:#E1EEFA;}
-:root[data-brand="neutral"]{--accent:#334155; --accent-soft:#E6EAF0;}
-@media (prefers-color-scheme:dark){
-  :root[data-brand="cbi"]:not([data-theme="light"]){--accent:#5AA6EB; --accent-ink:#071729; --accent-soft:#12304D;}
-  :root[data-brand="neutral"]:not([data-theme="light"]){--accent:#B7C3D6; --accent-ink:#0E141D; --accent-soft:#243044;}}
-:root[data-theme="dark"][data-brand="cbi"]{--accent:#5AA6EB; --accent-ink:#071729; --accent-soft:#12304D;}
-:root[data-theme="dark"][data-brand="neutral"]{--accent:#B7C3D6; --accent-ink:#0E141D; --accent-soft:#243044;}
-:root[data-brand="cbi"] .top{box-shadow:inset 0 -2px 0 #D20838}
+/* Central Bank brand: blue accent, thin red line under the header. Status colours (in / left / miss) are separate. */
+.top{box-shadow:inset 0 -2px 0 #D20838}
 .brand-mark{width:32px;height:32px;border-radius:8px;object-fit:cover;flex:none;margin-right:-2px;box-shadow:0 1px 3px rgba(0,0,0,.18)}
 .join-btn{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:0 14px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:14px;text-decoration:none;flex:none}
 .join-btn svg{width:18px;height:18px}
-.theme-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.theme-opt{border:1.5px solid var(--line);background:var(--surface);border-radius:var(--r-sm);padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;font:inherit;color:var(--ink);cursor:pointer;min-height:96px;text-align:center}
-.theme-opt[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
-.theme-opt b{font-size:13.5px;font-weight:600}
-.theme-opt .sw{width:46px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center}
-.theme-opt .sw img{width:20px;height:20px;background:#fff;border-radius:5px;padding:2px}
-.theme-opt .sub{font-size:12px;line-height:1.25}
 
 *{box-sizing:border-box}
 html,body{height:100%}

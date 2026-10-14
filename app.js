@@ -98,14 +98,13 @@ function unitsFromUdairo(D) {
     }))
   });
 }
-const THEMES_OK = ['classic', 'cbi', 'neutral'];
 function fresh() {
   return {
     v: 1,
     units: window.SEED_DATA ? unitsFromSource(window.SEED_DATA) : [],
     idents: {},
     session: null,
-    settings: { clientId: DEFAULT_CLIENT_ID, controls: { ...DEFAULT_CONTROLS }, poll: 15, keepAwake: true, signedIn: false, theme: 'classic' },
+    settings: { clientId: DEFAULT_CLIENT_ID, controls: { ...DEFAULT_CONTROLS }, poll: 15, keepAwake: true, signedIn: false },
     recentAgendas: [],
     backup: { at: null, dirty: 0 }
   };
@@ -116,8 +115,7 @@ if (!S || S.v !== 1) S = fresh();
 S.settings = { ...fresh().settings, ...S.settings, controls: { ...DEFAULT_CONTROLS, ...(S.settings || {}).controls } };
 S.settings.clientId = cleanClientId(S.settings.clientId) || DEFAULT_CLIENT_ID;
 delete S.settings.controls.viewer; delete S.settings.unsupported;
-if (!THEMES_OK.includes(S.settings.theme)) S.settings.theme = 'classic';
-document.documentElement.dataset.brand = S.settings.theme;
+delete S.settings.theme; // the Central Bank look is the only theme now
 let saveFailed = false;
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); saveFailed = false; }
@@ -577,7 +575,7 @@ function render() {
   manageWake();
 }
 function renderTop(title, { back = false, actions = '' } = {}) {
-  $('#top').innerHTML = `${back ? `<button class="back" data-act="back" aria-label="Back">${I.back}</button>` : S.settings.theme === 'cbi' ? '<img class="brand-mark" src="icon-192.png" alt="">' : ''}<h1>${esc(title)}</h1>${actions}`;
+  $('#top').innerHTML = `${back ? `<button class="back" data-act="back" aria-label="Back">${I.back}</button>` : '<img class="brand-mark" src="icon-192.png" alt="">'}<h1>${esc(title)}</h1>${actions}`;
 }
 function renderMain() {
   const m = $('#main');
@@ -864,7 +862,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 14;
+const APP_VERSION = 15;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -908,11 +906,6 @@ function viewSettings() {
       <div class="grow"><div class="title">${signed ? 'Connected' : 'Not connected'}</div><div class="sub">${signed ? 'Meet access granted on this phone' : 'Sign in once to create and track meetings'}</div></div>
       ${signed ? `<button class="btn btn-ghost" data-act="signout">Disconnect</button>` : `<button class="btn btn-primary" data-act="signin" ${st.clientId ? '' : 'disabled'}>${I.google}Connect</button>`}
     </div>
-  </section>
-
-  <div class="sec-label">Appearance</div>
-  <section class="card pad">
-    <div class="theme-grid">${[['classic', 'Classic blue', 'Default', 'linear-gradient(135deg,#13296B,#1F49B6)', false], ['cbi', 'Central Bank', 'Bank blue and emblem', 'linear-gradient(135deg,#0B4A8F,#146CC0)', true], ['neutral', 'Slate', 'Quiet and plain', 'linear-gradient(135deg,#1F2937,#475569)', false]].map(([k, l, d, bg, em]) => `<button class="theme-opt" aria-pressed="${st.theme === k}" data-act="set-theme" data-v="${k}"><span class="sw" style="background:${bg}">${em ? '<img src="cbi-emblem.png" alt="">' : ''}</span><b>${l}</b><span class="sub muted">${d}</span></button>`).join('')}</div>
   </section>
 
   <div class="sec-label">During meetings</div>
@@ -1260,8 +1253,8 @@ function drawAttendance() {
   const ends = all.map(p => p.active ? T : (p.lastEnd && Date.parse(p.lastEnd))).filter(Boolean);
   const t0 = starts.length ? Math.min(...starts) : 0, t1 = ends.length ? Math.max(...ends) : 0;
   const live = all.some(p => p.active);
-  const BR = ({ cbi: { g: ['#0B4A8F', '#146CC0'], acc: '#146CC0', soft: '#E1EEFA' }, neutral: { g: ['#1F2937', '#475569'], acc: '#334155', soft: '#E6EAF0' } })[S.settings.theme] || { g: ['#13296B', '#1F49B6'], acc: '#1F49B6', soft: '#E3E9FA' };
-  const showEmblem = S.settings.theme === 'cbi' && EMB.img;
+  const BR = { g: ['#0B4A8F', '#146CC0'], acc: '#146CC0', soft: '#E1EEFA' };
+  const showEmblem = !!EMB.img;
   const P = { bg: '#F3F5F8', ink: '#142033', muted: '#5B6B80', faint: '#8A97A8', line: '#DCE2EA', card: '#FFFFFF', acc: BR.acc, in: '#12805C', inS: '#DDF3EA', left: '#A86A0F', leftS: '#FBEFD9', miss: '#C2412D', missS: '#FBE4DF' };
   const W = 1080, pad = 44, FONT = '"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
@@ -1440,7 +1433,7 @@ function pickImport() {
       } else if (j.kind === 'rollcall-backup') {
         if (!(await confirmSheet('Restore this backup?', `This replaces the directory, linked accounts and settings on this phone with the backup from ${esc(new Date(j.exported).toLocaleString('en-IN'))}.`, 'Restore', true))) return;
         S.units = j.units || S.units; S.idents = j.idents || {}; S.settings = { ...S.settings, ...j.settings, signedIn: S.settings.signedIn }; S.recentAgendas = j.recentAgendas || [];
-        if (!THEMES_OK.includes(S.settings.theme)) S.settings.theme = 'classic'; document.documentElement.dataset.brand = S.settings.theme;
+        delete S.settings.theme;
         S.backup = { at: now(), dirty: 0 }; reindex(); save(); render(); toast('Backup restored');
       } else throw new Error();
     } catch (e) { toast('That file isn\'t a Hazri backup or udairo.js.'); }
@@ -1493,7 +1486,6 @@ const ACT = {
   'session-menu': () => openSessionMenu(),
   'edit-expected': () => { closeSheet(true); U.draft = { expected: S.session.expected.slice() }; U.sessionDraft = U.draft; openExpected(); },
   'edit-details': () => { closeSheet(true); openDetailsEdit(); },
-  'set-theme': el => { if (!THEMES_OK.includes(el.dataset.v)) return; S.settings.theme = el.dataset.v; document.documentElement.dataset.brand = el.dataset.v; save(); render(); },
   'check-update': () => checkUpdate(true),
   'apply-update': () => applyUpdate(),
   'attendance-image': () => { closeSheet(true); openAttendanceImage(); },
