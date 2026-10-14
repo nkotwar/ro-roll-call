@@ -1110,7 +1110,7 @@ function openSessionMenu() {
         ${s.source === 'demo' ? '' : `<a class="item tap" href="${esc(s.meetingUri)}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">${I.ext.replace('<svg', '<svg style="width:20px;height:20px"')}<div class="grow title">Open in Google Meet</div></a>`}
         <button class="item tap" data-act="edit-expected">${I.sliders.replace('<svg', '<svg style="width:20px;height:20px"')}<div class="grow"><div class="title">Change who should attend</div><div class="sub">${s.expected.length} offices expected</div></div></button>
         <button class="item tap" data-act="edit-details">${I.edit.replace('<svg', '<svg style="width:20px;height:20px"')}<div class="grow"><div class="title">Edit time, agenda, headed by</div></div></button>
-        <button class="item tap" data-act="copy-summary">${I.copy.replace('<svg', '<svg style="width:20px;height:20px"')}<div class="grow"><div class="title">Copy attendance summary</div><div class="sub">Joined, left and absent branches as text</div></div></button>
+        <button class="item tap" data-act="attendance-image">${I.share.replace('<svg', '<svg style="width:20px;height:20px"')}<div class="grow"><div class="title">Share attendance image</div><div class="sub">Who joined, who left, who is missing, and for how long</div></div></button>
       </div>
       <button class="btn btn-danger btn-block" data-act="end-session">${I.stop}Close this session</button>
       <p class="hint" style="margin:0;text-align:center">Closing clears this board. Your tags stay saved.</p>
@@ -1198,6 +1198,148 @@ function summaryText() {
   if (b.rows.left.length) L.push('🟡 Joined & left: ' + b.rows.left.filter(r => !r.u.isRO).map(nm).join(', '));
   if (b.rows.miss.length) L.push('❌ Not joined: ' + b.rows.miss.map(nm).join(', '));
   return L.join('\n');
+}
+/* ───────────────────────── attendance image ───────────────────────── */
+const fmtDur = ms => { const m = Math.round(Math.max(0, ms) / 60000); if (!ms) return '–'; if (m < 1) return '<1m'; const h = Math.floor(m / 60); return h ? `${h}h ${String(m % 60).padStart(2, '0')}m` : `${m}m`; };
+const fmtClock = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(/\s?(AM|PM)/i, m => m.toLowerCase());
+function drawAttendance() {
+  const s = S.session, b = board(), T = now();
+  const stay = p => { const a = p.first ? Date.parse(p.first) : 0; if (!a) return 0; const z = p.active ? T : (p.lastEnd ? Date.parse(p.lastEnd) : T); return Math.max(0, z - a); };
+  const who = x => x.t && x.t.p ? pretty((personById.get(x.t.p) || {}).name || x.p.name) : x.p.name;
+  const rowOf = r => ({ name: unitLabel(r.u), code: r.u.code, people: [...new Set(r.list.map(who))].join(', '), dur: Math.max(0, ...r.list.map(x => stay(x.p))), lastLeft: r.active.length ? 0 : r.lastLeft, now: r.active.length > 0 });
+  const inRows = b.rows.in.map(rowOf), leftRows = b.rows.left.map(rowOf);
+  const others = b.untagged.map(p => ({ name: p.name, code: '', people: 'Not linked to a branch', dur: stay(p), lastLeft: p.active ? 0 : (p.lastEnd ? Date.parse(p.lastEnd) : 0), now: p.active }));
+  const miss = b.rows.miss.map(r => ({ name: unitLabel(r.u), code: r.u.code }));
+  const all = Object.values(s.parts);
+  const starts = all.map(p => p.first && Date.parse(p.first)).filter(Boolean);
+  const ends = all.map(p => p.active ? T : (p.lastEnd && Date.parse(p.lastEnd))).filter(Boolean);
+  const t0 = starts.length ? Math.min(...starts) : 0, t1 = ends.length ? Math.max(...ends) : 0;
+  const live = all.some(p => p.active);
+  const P = { bg: '#F3F5F8', ink: '#142033', muted: '#5B6B80', faint: '#8A97A8', line: '#DCE2EA', card: '#FFFFFF', acc: '#1F49B6', in: '#12805C', inS: '#DDF3EA', left: '#A86A0F', leftS: '#FBEFD9', miss: '#C2412D', missS: '#FBE4DF' };
+  const W = 1080, pad = 44, FONT = '"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+
+  const paint = c => {
+    const font = (w, sz) => { c.font = `${w} ${sz}px ${FONT}`; };
+    const txt = (t, x, y, o = {}) => {
+      const { w = 400, sz = 28, col = P.ink, al = 'left', max } = o;
+      font(w, sz); c.fillStyle = col; c.textAlign = al; c.textBaseline = 'alphabetic';
+      let out = String(t);
+      if (max) { while (out.length > 1 && c.measureText(out).width > max) out = out.slice(0, -1); if (out !== String(t)) out = out.trimEnd() + '…'; }
+      c.fillText(out, x, y);
+    };
+    const path = (x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
+    const fillRR = (x, y, w, h, r, fill) => { path(x, y, w, h, r); c.fillStyle = fill; c.fill(); };
+    const card = (x, y, w, h, bar) => {
+      fillRR(x, y, w, h, 18, P.card); path(x, y, w, h, 18); c.strokeStyle = P.line; c.lineWidth = 1.5; c.stroke();
+      if (bar) { c.save(); path(x, y, w, h, 18); c.clip(); c.fillStyle = bar; c.fillRect(x, y, 10, h); c.restore(); }
+    };
+    const wrap = (t, max, w, sz, lines) => {
+      font(w, sz); const out = []; let cur = '';
+      for (const wd of String(t).split(/\s+/)) { const tr = cur ? cur + ' ' + wd : wd; if (c.measureText(tr).width > max && cur) { out.push(cur); cur = wd; } else cur = tr; }
+      if (cur) out.push(cur);
+      if (out.length > lines) { out.length = lines; out[lines - 1] = out[lines - 1].replace(/\s*\S*$/, '') + '…'; }
+      return out;
+    };
+    c.fillStyle = P.bg; c.fillRect(0, 0, W, c.canvas.height);
+
+    /* header */
+    const ag = s.details.agenda ? wrap(s.details.agenda, W - 2 * pad, 500, 32, 2) : [];
+    const meta = [];
+    if (s.details.when) meta.push(fmtWhen(s.details.when));
+    if (s.details.headedBy) meta.push('Headed by ' + s.details.headedBy);
+    if (t0) meta.push(`In meeting ${fmtClock(t0)} – ${live ? 'now' : fmtClock(t1)}  ·  ${fmtDur(t1 - t0)}${live ? ' so far' : ''}`);
+    const headH = 44 + 22 + 24 + 60 + (ag.length ? 14 + ag.length * 42 : 0) + 18 + meta.length * 40 + 34;
+    const g = c.createLinearGradient(0, 0, W, headH); g.addColorStop(0, '#13296B'); g.addColorStop(1, '#1F49B6');
+    c.fillStyle = g; c.fillRect(0, 0, W, headH);
+    let y = 44 + 22;
+    c.letterSpacing = '3px'; txt('RO UDAIPUR  ·  CENTRAL BANK OF INDIA', pad, y, { w: 600, sz: 21, col: 'rgba(255,255,255,.72)' }); c.letterSpacing = '0px';
+    y += 24 + 60; txt('VC Attendance', pad, y, { w: 700, sz: 60, col: '#FFFFFF' });
+    if (ag.length) { y += 14; for (const l of ag) { y += 42; txt(l, pad, y - 6, { w: 500, sz: 32, col: 'rgba(255,255,255,.92)' }); } }
+    y += 18;
+    for (const m of meta) { y += 40; txt(m, pad, y - 10, { w: 500, sz: 27, col: 'rgba(255,255,255,.8)' }); }
+    y = headH + 28;
+
+    /* totals */
+    const pct = b.total ? Math.round(100 * b.joined / b.total) : 0;
+    card(pad, y, W - 2 * pad, 262);
+    txt(`${b.joined}/${b.total}`, pad + 32, y + 84, { w: 700, sz: 68 });
+    txt('branches joined', pad + 32, y + 122, { w: 500, sz: 27, col: P.muted });
+    txt(pct + '%', W - pad - 32, y + 84, { w: 700, sz: 68, col: P.acc, al: 'right' });
+    fillRR(pad + 32, y + 144, W - 2 * pad - 64, 16, 8, P.line);
+    if (pct) fillRR(pad + 32, y + 144, Math.max(16, (W - 2 * pad - 64) * pct / 100), 16, 8, P.in);
+    const tl = [['In meeting', b.inCount, P.in], ['Joined & left', b.leftCount, P.left], ['Not joined', b.missCount, P.miss]];
+    const colW = (W - 2 * pad - 64) / 3;
+    tl.forEach(([lab, n, col], i) => { const x = pad + 32 + i * colW; txt(n, x, y + 212, { w: 700, sz: 40, col }); txt(lab, x, y + 244, { w: 500, sz: 22, col: P.muted }); });
+    y += 262 + 34;
+
+    /* sections */
+    const head = (title, n, col, soft) => {
+      fillRR(pad, y, 14, 14, 7, col); y += 12;
+      txt(title, pad + 28, y + 6, { w: 700, sz: 32, col: P.ink });
+      fillRR(W - pad - 84, y - 24, 84, 44, 22, soft); txt(n, W - pad - 42, y + 8, { w: 700, sz: 26, col, al: 'center' });
+      y += 44;
+    };
+    const rows = (list, col, soft) => {
+      for (const r of list) {
+        card(pad, y, W - 2 * pad, 92, col);
+        txt(r.name, pad + 34, y + 40, { w: 600, sz: 32, max: W - 2 * pad - 34 - 230 });
+        txt((r.code ? r.code + '  ·  ' : '') + (r.people || ''), pad + 34, y + 74, { w: 400, sz: 25, col: P.muted, max: W - 2 * pad - 34 - 230 });
+        txt(fmtDur(r.dur), W - pad - 28, y + 42, { w: 700, sz: 34, col, al: 'right' });
+        txt(r.now ? 'in meeting' : r.lastLeft ? 'left ' + fmtClock(r.lastLeft) : '', W - pad - 28, y + 74, { w: 500, sz: 23, col: P.muted, al: 'right' });
+        y += 92 + 12;
+      }
+    };
+    if (inRows.length) { head('In meeting', inRows.length, P.in, P.inS); y += 8; rows(inRows, P.in); y += 18; }
+    if (leftRows.length) { head('Joined & left', leftRows.length, P.left, P.leftS); y += 8; rows(leftRows, P.left); y += 18; }
+    if (others.length) { head('Not linked to a branch', others.length, P.acc, '#E3E9FA'); y += 8; rows(others, P.acc); y += 18; }
+    if (miss.length) {
+      head('Not joined', miss.length, P.miss, P.missS); y += 8;
+      const cw = (W - 2 * pad - 14) / 2;
+      miss.forEach((m, i) => {
+        const x = pad + (i % 2) * (cw + 14), yy = y + Math.floor(i / 2) * 74;
+        fillRR(x, yy, cw, 62, 14, P.missS);
+        txt(m.name, x + 22, yy + 40, { w: 600, sz: 28, col: P.ink, max: cw - 44 - 92 });
+        txt(m.code, x + cw - 22, yy + 40, { w: 500, sz: 24, col: P.miss, al: 'right' });
+      });
+      y += Math.ceil(miss.length / 2) * 74 + 14;
+    }
+    if (!inRows.length && !leftRows.length && !others.length && !miss.length) { txt('Nobody has joined yet.', pad, y + 40, { sz: 30, col: P.muted }); y += 80; }
+
+    /* footer */
+    y += 8; c.fillStyle = P.line; c.fillRect(pad, y, W - 2 * pad, 2); y += 40;
+    txt(`Generated ${new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}  ·  RO Roll Call`, W / 2, y, { sz: 22, col: P.faint, al: 'center' });
+    y += 34; txt('Time = first join to last leave', W / 2, y, { sz: 20, col: P.faint, al: 'center' });
+    return y + 40;
+  };
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = 300;
+  const H = paint(cv.getContext('2d'));
+  cv.height = H;
+  paint(cv.getContext('2d'));
+  return cv;
+}
+async function openAttendanceImage() {
+  if (!S.session) return;
+  openSheet(`
+    <div class="sheet-head"><div class="grow"><h3>Attendance image</h3><div class="sub">Share it on WhatsApp or save it</div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
+    <div class="sheet-body" id="ai-body"><p class="muted" style="margin:0">Preparing…</p></div>`);
+  try { await Promise.race([document.fonts.load('600 30px "IBM Plex Sans"'), new Promise(r => setTimeout(r, 1500))]); } catch (e) {}
+  let blob;
+  try { blob = await new Promise((res, rej) => drawAttendance().toBlob(b => b ? res(b) : rej(new Error('no image')), 'image/png')); }
+  catch (e) { const bd = $('#ai-body'); if (bd) bd.innerHTML = `<div class="banner err">${I.alert}<div>Could not make the image on this phone. Use Copy as text instead.</div></div><button class="btn btn-soft btn-block" data-act="copy-summary">${I.copy}Copy as text</button>`; return; }
+  const bd = $('#ai-body'); if (!bd) return;
+  const name = `vc-attendance-${new Date().toISOString().slice(0, 10)}.png`;
+  let file = null; try { file = new File([blob], name, { type: 'image/png' }); } catch (e) {}
+  const url = URL.createObjectURL(blob);
+  const canShare = !!(file && navigator.canShare && navigator.canShare({ files: [file] }));
+  bd.innerHTML = `
+    <div class="share-grid">
+      <button class="btn btn-primary" id="ai-share" ${canShare ? '' : 'disabled'}>${I.share}Share…</button>
+      <button class="btn btn-soft" id="ai-dl">${I.down}Save image</button>
+    </div>
+    <button class="btn btn-ghost btn-block" data-act="copy-summary">${I.copy}Copy as text instead</button>
+    <img src="${url}" alt="Attendance summary" style="width:100%;border-radius:14px;border:1px solid var(--line);display:block">`;
+  $('#ai-share').onclick = () => navigator.share({ files: [file], title: 'VC attendance' }).catch(() => {});
+  $('#ai-dl').onclick = () => { const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); toast('Image saved'); };
 }
 function exportData(kind) {
   const date = new Date().toISOString().slice(0, 10);
@@ -1297,6 +1439,7 @@ const ACT = {
   'session-menu': () => openSessionMenu(),
   'edit-expected': () => { closeSheet(true); U.draft = { expected: S.session.expected.slice() }; U.sessionDraft = U.draft; openExpected(); },
   'edit-details': () => { closeSheet(true); openDetailsEdit(); },
+  'attendance-image': () => { closeSheet(true); openAttendanceImage(); },
   'copy-summary': () => { copyText(summaryText(), 'Attendance summary copied'); closeSheet(); },
   'end-session': async () => { closeSheet(true); if (await confirmSheet('Close this session?', 'The board for <b>' + esc(S.session.meetingCode) + '</b> will be cleared. Tags you saved stay on this phone.', 'Close session', true)) { clearTimeout(syncTimer); S.session = null; save(); render(); } },
   'dir-filter': el => { U.dirFilter = el.dataset.k; renderMain(); },
