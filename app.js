@@ -1001,9 +1001,9 @@ function personChips(list, onlyActive) {
 function bmOf(u) { return u.staff.find(p => p.bm) || u.staff[0]; }
 function callNumber(u) { return u.mobile || u.phone || (bmOf(u) && bmOf(u).phone) || ''; }
 function ptrHint() {
-  const h = S.ptrHint || (S.ptrHint = { shown: 0, used: false });
-  if (h.used || h.shown >= 3 || U.hintFor === S.session.id) return;
-  U.hintFor = S.session.id; h.shown++; save();
+  // Once at the start of every meeting session (demo, created or tracked).
+  const s = S.session; if (!s || s.hintShown) return;
+  s.hintShown = true; save();
   setTimeout(() => {
     if (U.tab !== 'meet' || U.route) return;
     const el = document.createElement('div'); el.className = 'ptr-hint'; el.setAttribute('aria-label', 'Pull down to refresh'); el.innerHTML = I.down;
@@ -1151,7 +1151,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 39;
+const APP_VERSION = 40;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1978,7 +1978,6 @@ function swipeTabs(dir) {
     el.style.transition = 'transform .2s ease'; place(ARM, 0); el.classList.add('spin');
     const t0 = Date.now();
     try { await syncNow(); } catch (err) {}
-    if (S.session && !S.session.error) { S.ptrHint = { ...(S.ptrHint || {}), used: true }; save(); }
     while (syncing) await new Promise(r => setTimeout(r, 100));
     await new Promise(r => setTimeout(r, Math.max(0, 650 - (Date.now() - t0))));
     busy = false; reset();
