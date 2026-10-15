@@ -618,6 +618,7 @@ function viewHome() {
         <button class="btn btn-ghost btn-block" data-act="open-create" data-demo="1">${I.play}Try a demo meeting</button>
       </div>
     </section>
+    ${callBoard()}
     ${ready ? '' : `<div class="banner info">${I.info}<div><b>Google is not connected yet.</b> Demo meetings work now. To create real meetings, add your Client ID in <button class="btn-link" data-act="tab" data-tab="settings" style="border:0;background:none;padding:0;color:var(--accent);font-weight:600">Settings</button>.</div></div>`}`;
 }
 
@@ -809,6 +810,23 @@ function dirList() {
   }
   return callSummary(units) + units.slice().sort((a, b) => a.name.localeCompare(b.name)).map(unitRow).join('');
 }
+/* Home: calling-round board. One tile per expected branch, coloured by call status. */
+const TILE = { informed: 's-in', recall: 's-left', denied: 's-miss', noanswer: 's-na', called: 's-called' };
+function callBoard() {
+  const units = S.units.filter(u => !u.isRO && u.expect).sort((a, b) => a.name.localeCompare(b.name));
+  if (!units.length) return '';
+  const n = { informed: 0, recall: 0, noanswer: 0, denied: 0, called: 0, none: 0 };
+  for (const u of units) { const c = callOf(u.code); n[c ? (TILE[c.status] ? c.status : 'called') : 'none']++; }
+  const N = units.length, any = n.none < N;
+  const seg = k => n[k] ? `<span class="cb-${k}" style="width:${(100 * n[k] / N).toFixed(2)}%"></span>` : '';
+  const sub = any ? `${n.informed} of ${N} informed · ${n.none} not called yet` : `No branch called yet. Tap a branch to call it.`;
+  const legend = [['informed', 'Informed'], ['recall', 'Recall later'], ['called', 'Called'], ['noanswer', 'No answer'], ['denied', 'Denied']].filter(([k]) => n[k]).map(([k, l]) => `<span class="cb-key"><i class="cb-${k}"></i>${l}</span>`).join('');
+  return `<section class="card pad cboard">
+    <div class="row"><div class="grow"><div class="title">Calling round</div><div class="sub">${sub}</div></div>${any ? `<button class="btn btn-soft" style="min-height:36px;padding:6px 12px" data-act="reset-calls">New round</button>` : ''}</div>
+    ${any ? `<div class="cb-bar">${seg('informed')}${seg('recall')}${seg('called')}${seg('noanswer')}${seg('denied')}</div>${legend ? `<div class="cb-legend">${legend}</div>` : ''}` : ''}
+    <div class="cb-grid">${units.map(u => { const c = callOf(u.code); const cls = c ? (TILE[c.status] || 's-called') : ''; return `<button class="cb-tile ${cls}" data-act="open-unit" data-code="${u.code}" aria-label="${esc(u.name)}${c ? ', ' + esc((CALL_STATUS[c.status] || CALL_STATUS.called).label) : ', not called'}"><span class="mono">${u.code}</span><span class="nm">${esc(u.name)}</span></button>`; }).join('')}</div>
+  </section>`;
+}
 function callSummary(units) {
   const n = { informed: 0, recall: 0, noanswer: 0, denied: 0, called: 0, none: 0 };
   for (const u of units) { const c = callOf(u.code); n[c ? c.status : 'none']++; }
@@ -859,7 +877,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 18;
+const APP_VERSION = 19;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
