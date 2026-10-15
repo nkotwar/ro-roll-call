@@ -583,6 +583,7 @@ async function askExit() {
 }
 
 function render() {
+  $$('.ptr-hint').forEach(e => e.remove());
   $$('.tab').forEach(b => b.setAttribute('aria-current', b.dataset.tab === U.tab ? 'page' : 'false'));
   renderMain();
   manageWake();
@@ -914,14 +915,17 @@ function shareText(s) {
 }
 function viewShare() {
   const s = S.session;
-  renderTop('Share meeting', { back: true });
+  renderTop('Meeting', { back: true });
   if (!s) return '';
-  if (U.shareText == null) U.shareText = shareText(s);
+  if (U.shareText == null) { U.shareText = shareText(s); U.shareEdited = false; }
+  const d = s.details;
   return `
+  <div class="sec-label">Invite</div>
   <section class="card pad" style="display:flex;flex-direction:column;gap:12px">
-    <div class="row"><span class="chip in"><span class="dot"></span>Meeting ready</span><span class="mono muted">${esc(s.meetingCode)}</span></div>
+    <div class="row"><span class="mono muted">${esc(s.meetingCode)}</span></div>
     ${s.controlsNote ? `<div class="banner warn">${I.alert}<div>${esc(s.controlsNote)}</div></div>` : ''}
-    <div class="field"><label for="share-text">Message</label><textarea class="input" id="share-text" rows="6" data-share>${esc(U.shareText)}</textarea><span class="hint">Edit anything before sending.</span></div>
+    <div class="field"><label for="share-text">Message</label><textarea class="input" id="share-text" rows="6" data-share>${esc(U.shareText)}</textarea>
+      <span class="hint" id="share-hint">${U.shareEdited ? `Edited by you. <button class="btn-link" data-act="regen-share">Update from details</button>` : 'Updates with the details below. Edit anything before sending.'}</span></div>
     <div class="share-grid">
       <button class="btn btn-primary" data-act="share-native">${I.share}Share…</button>
       <a class="btn btn-soft" id="wa-link" href="https://wa.me/?text=${encodeURIComponent(U.shareText)}" target="_blank" rel="noopener">${I.chat}WhatsApp</a>
@@ -929,7 +933,36 @@ function viewShare() {
       <a class="btn btn-ghost" href="${esc(s.meetingUri)}" target="_blank" rel="noopener">${I.video}Join</a>
     </div>
   </section>
-  <button class="btn btn-primary btn-block" data-act="to-board">Go to live board</button>`;
+
+  <div class="sec-label">Attendance</div>
+  <section class="card pad share-grid">
+    <button class="btn btn-soft" data-act="attendance-image">${I.share}Share image</button>
+    <button class="btn btn-ghost" data-act="copy-summary">${I.copy}Copy as text</button>
+  </section>
+
+  <div class="sec-label">Details</div>
+  <section class="card pad" style="display:flex;flex-direction:column;gap:12px">
+    <div class="field"><label for="m-when">Time of VC</label><input class="input" type="datetime-local" id="m-when" data-det="when" value="${esc(d.when ? toLocalInput(new Date(d.when)) : '')}"></div>
+    <div class="field"><label for="m-agenda">Agenda</label><textarea class="input" id="m-agenda" rows="2" data-det="agenda">${esc(d.agenda)}</textarea></div>
+    <div class="field"><label for="m-head">Headed by</label><input class="input" id="m-head" data-det="headedBy" value="${esc(d.headedBy)}" placeholder="Name and designation"></div>
+  </section>
+
+  <div class="sec-label">Who should attend</div>
+  ${attField(s.expected, 'edit-expected')}
+
+  <button class="btn btn-primary btn-block" data-act="to-board" style="margin-top:6px">Go to live board</button>`;
+}
+function onDetail(t) {
+  const s = S.session; if (!s) return;
+  const k = t.dataset.det;
+  s.details[k] = k === 'when' ? (t.value ? new Date(t.value).toISOString() : '') : t.value.trim();
+  if (k === 'agenda' && s.details.agenda) S.recentAgendas = [s.details.agenda, ...(S.recentAgendas || []).filter(a => a !== s.details.agenda)].slice(0, 8);
+  save();
+  if (!U.shareEdited) {
+    U.shareText = shareText(s);
+    const ta = $('#share-text'); if (ta) ta.value = U.shareText;
+    const wa = $('#wa-link'); if (wa) wa.href = 'https://wa.me/?text=' + encodeURIComponent(U.shareText);
+  } else { const h = $('#share-hint'); if (h) h.innerHTML = `Edited by you. <button class="btn-link" data-act="regen-share">Update from details</button>`; }
 }
 
 /* ───────────────────────── views: live board ───────────────────────── */
@@ -983,7 +1016,7 @@ function ptrHint() {
 function viewBoard() {
   const s = S.session, b = board();
   ptrHint();
-  renderTop(s.source === 'demo' ? 'Demo meeting' : 'Live board', { actions: `${s.source === 'demo' ? '' : `<a class="join-btn" href="${esc(s.meetingUri)}" target="_blank" rel="noopener" aria-label="Join the meeting yourself">${I.video}Join</a>`}<button class="icon-btn" data-act="go-share" aria-label="Share meeting">${I.share}</button><button class="icon-btn" data-act="session-menu" aria-label="Meeting options">${I.more}</button>` });
+  renderTop(s.source === 'demo' ? 'Demo meeting' : 'Live board', { actions: `${s.source === 'demo' ? '' : `<a class="join-btn" href="${esc(s.meetingUri)}" target="_blank" rel="noopener" aria-label="Join the meeting yourself">${I.video}Join</a>`}<button class="icon-btn" data-act="go-share" aria-label="Share meeting">${I.share}</button><button class="icon-btn end-btn" data-act="end-ask" aria-label="End session">${I.stop}</button>` });
   const d = s.details;
   const tabs = [['miss', 'Not joined', b.missCount], ['left', 'Joined & left', b.rows.left.length], ['in', 'In meeting', b.rows.in.length], ['people', 'People', b.people.length]];
   let list = '';
@@ -1117,7 +1150,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 37;
+const APP_VERSION = 38;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1309,9 +1342,9 @@ function attSummary(codes) {
   }
   return { n, total: br.length, ro, label };
 }
-function attField(codes) {
+function attField(codes, act = 'pick-expected') {
   const a = attSummary(codes);
-  return `<button type="button" class="att-field" data-act="pick-expected">
+  return `<button type="button" class="att-field" data-act="${act}">
     <span class="att-num"><b>${a.n}</b><span>of ${a.total}</span></span>
     <div class="grow"><div class="title">${esc(a.label)}</div><div class="sub">${a.ro ? 'RO staff counted too' : 'RO staff not counted'} · missing branches go to the call list</div></div>
     <span class="att-chev">${I.chev}</span></button>`;
@@ -1438,38 +1471,18 @@ function openUnitEdit(code) {
   });
 }
 
-/* Session menu */
-function openSessionMenu() {
-  const s = S.session;
+/* End session: confirm, with a last chance to share the attendance image */
+function openEndSheet() {
   openSheet(`
-    <div class="sheet-head"><div class="grow"><h3>Meeting options</h3><div class="sub mono">${esc(s.meetingCode)}</div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
+    <div class="sheet-head"><h3 class="grow">End this session?</h3></div>
     <div class="sheet-body">
-      <div class="list card" style="box-shadow:none;border:1px solid var(--line)">
-        ${s.source === 'demo' ? '' : `<a class="item tap" href="${esc(s.meetingUri)}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit">${I.ext.replace('<svg', '<svg style="width:20px;height:20px"')}<div class="grow title">Open in Google Meet</div></a>`}
-        <button class="item tap" data-act="edit-expected">${I.sliders.replace('<svg', '<svg style="width:20px;height:20px"')}<div class="grow"><div class="title">Change who should attend</div><div class="sub">${s.expected.length} offices expected</div></div></button>
-        <button class="item tap" data-act="edit-details">${I.edit.replace('<svg', '<svg style="width:20px;height:20px"')}<div class="grow"><div class="title">Edit time, agenda, headed by</div></div></button>
-        <button class="item tap" data-act="attendance-image">${I.share.replace('<svg', '<svg style="width:20px;height:20px"')}<div class="grow"><div class="title">Share attendance image</div><div class="sub">Who joined, who left, who is missing, and for how long</div></div></button>
-      </div>
-      <button class="btn btn-danger btn-block" data-act="end-session">${I.stop}Close this session</button>
-      <p class="hint" style="margin:0;text-align:center">Closing clears this board. Your tags stay saved.</p>
-    </div>`);
-}
-function openDetailsEdit() {
-  const d = S.session.details;
-  openSheet(`
-    <div class="sheet-head"><h3 class="grow">Meeting details</h3><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
-    <form class="sheet-body" id="det-form">
-      <div class="field"><label for="d-when">Time of VC</label><input class="input" type="datetime-local" id="d-when" value="${esc(d.when ? toLocalInput(new Date(d.when)) : '')}"></div>
-      <div class="field"><label for="d-agenda">Agenda</label><textarea class="input" id="d-agenda" rows="2">${esc(d.agenda)}</textarea></div>
-      <div class="field"><label for="d-head">Headed by</label><input class="input" id="d-head" value="${esc(d.headedBy)}"></div>
-      <button class="btn btn-primary btn-block" type="submit">Save</button>
-    </form>`);
-  $('#det-form').addEventListener('submit', e => {
-    e.preventDefault();
-    const w = $('#d-when').value;
-    S.session.details = { when: w ? new Date(w).toISOString() : '', agenda: $('#d-agenda').value.trim(), headedBy: $('#d-head').value.trim() };
-    U.shareText = null; save(); closeSheet(); render(); toast('Details updated');
-  });
+      <p class="muted" style="margin:0">The board for <b>${esc(S.session.meetingCode)}</b> will be cleared. Tags you saved stay on this phone.</p>
+      <button class="btn btn-soft btn-block" id="end-img">${I.share}Share attendance image first</button>
+    </div>
+    <div class="sheet-foot"><button class="btn btn-ghost" style="flex:1" id="end-no">Cancel</button><button class="btn btn-danger" style="flex:1" id="end-yes">End session</button></div>`);
+  $('#end-no').onclick = () => closeSheet();
+  $('#end-img').onclick = () => { closeSheet(true); openAttendanceImage(); };
+  $('#end-yes').onclick = () => { closeSheet(true); clearTimeout(syncTimer); S.session = null; save(); render(); toast('Session ended'); };
 }
 function openAttach() {
   openSheet(`
@@ -1838,9 +1851,9 @@ const ACT = {
   },
   'reset-calls': async () => { if (await confirmSheet('Start a new calling round?', 'All call statuses (informed, recall later, no answer, denied) are cleared so you can start fresh before the next VC.', 'Clear statuses', true)) { S.calls = {}; S.pendingCall = null; save(); renderMain(); toast('Call statuses cleared'); } },
   copy: el => copyText(el.dataset.v, 'Number copied'),
-  'session-menu': () => openSessionMenu(),
+  'end-ask': () => openEndSheet(),
+  'regen-share': () => { U.shareEdited = false; U.shareText = shareText(S.session); renderMain(); },
   'edit-expected': () => { closeSheet(true); U.draft = { expected: S.session.expected.slice() }; U.sessionDraft = U.draft; openExpected(); },
-  'edit-details': () => { closeSheet(true); openDetailsEdit(); },
   'import-staff': () => pickImport('staff'),
   'arc-tap': () => arcTap(),
   about: () => go({ name: 'about' }),
@@ -1884,12 +1897,14 @@ $$('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab))
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.draft && U.draft) U.draft[t.dataset.draft] = t.value;
-  if (t.id === 'share-text') { U.shareText = t.value; const wa = $('#wa-link'); if (wa) wa.href = 'https://wa.me/?text=' + encodeURIComponent(t.value); }
+  if (t.id === 'share-text') { U.shareText = t.value; U.shareEdited = true; const wa = $('#wa-link'); if (wa) wa.href = 'https://wa.me/?text=' + encodeURIComponent(t.value); const h = $('#share-hint'); if (h && !h.querySelector('button')) h.innerHTML = `Edited by you. <button class="btn-link" data-act="regen-share">Update from details</button>`; }
+  if (t.dataset.det && t.dataset.det !== 'when') onDetail(t);
   if (t.id === 'dir-q') { U.dirQ = t.value; $('#dir-list').innerHTML = dirList(); }
   if (t.dataset.setting === 'clientId') { S.settings.clientId = cleanClientId(t.value) || t.value.trim(); save(); const b = $('[data-act="signin"]'); if (b) b.disabled = !S.settings.clientId; }
 });
 document.addEventListener('change', e => {
   const t = e.target;
+  if (t.dataset.det === 'when') onDetail(t);
   if (t.dataset.ctrl && U.draft) { U.draft.controls[t.dataset.ctrl] = t.checked; renderMain(); }
   if (t.dataset.setting === 'poll') { S.settings.poll = +t.value; save(); scheduleSync(); }
   if (t.dataset.setting === 'keepAwake') { S.settings.keepAwake = t.checked; save(); manageWake(); }
