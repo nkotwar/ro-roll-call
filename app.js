@@ -85,7 +85,7 @@ const DEFAULT_CONTROLS = { access: 'OPEN', moderation: true, chat: 'NO_RESTRICTI
 function unitsFromSource(src) {
   return (src.units || []).map(u => ({
     code: u.code, name: u.name, alpha: u.alpha || '', isRO: !!u.isRO, isNew: !!u.isNew, category: u.category || '', size: u.size || '',
-    mobile: u.mobile || '', phone: u.phone || '', expect: u.isRO ? false : true,
+    mobile: u.mobile || '', phone: u.phone || '', expect: !(u.isRO || u.category === 'METRO'),
     staff: (u.staff || []).map(s => ({ id: 'E' + s.empId, empId: s.empId, name: s.name, designation: s.designation || '', phone: s.phone || '', bm: !!s.bm, second: !!s.second, dept: s.dept || '' }))
   }));
 }
@@ -116,6 +116,7 @@ S.settings = { ...fresh().settings, ...S.settings, controls: { ...DEFAULT_CONTRO
 S.settings.clientId = cleanClientId(S.settings.clientId) || DEFAULT_CLIENT_ID;
 delete S.settings.controls.viewer; delete S.settings.unsupported;
 delete S.settings.theme; // the Central Bank look is the only theme now
+if (!S.metroDefaultFixed) { (S.units || []).forEach(u => { if (u.category === 'METRO') u.expect = false; }); S.metroDefaultFixed = true; }
 let saveFailed = false;
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(S)); saveFailed = false; }
@@ -485,12 +486,19 @@ function startDemo(details, expected) {
       const key = kind === 'google' ? 'g:demo-' + p.empId + '-' + v : (kind === 'guest' ? 'n:' : 't:') + normKey(name);
       const join = at + Math.floor(Math.random() * 6);
       plan.push({ at: join, key, name, kind });
-      if (Math.random() < 0.18) plan.push({ at: join + 3 + Math.floor(Math.random() * 6), key, leave: true });
     }
     if (Math.random() < 0.5) at++;
   }
   const branchAcct = unitByCode.get(expected[Math.floor(Math.random() * expected.length)]);
   if (branchAcct && !branchAcct.isRO) plan.push({ at: 3, key: 'n:' + normKey('CBI ' + branchAcct.name), name: 'CBI ' + branchAcct.name, kind: 'guest' });
+  // A few people drop off part-way (3 to 5), and one of them rejoins later.
+  const joins = plan.filter(e => !e.leave && e.key !== 'g:demo-self').sort(() => Math.random() - .5);
+  const k = Math.min(joins.length, 3 + Math.floor(Math.random() * 3));
+  joins.slice(0, k).forEach((e, i) => {
+    const out = e.at + 3 + Math.floor(Math.random() * 6);
+    plan.push({ at: out, key: e.key, leave: true });
+    if (i === 0) plan.push({ at: out + 4 + Math.floor(Math.random() * 4), key: e.key, name: e.name, kind: e.kind });
+  });
   s.demo.plan = plan;
   return s;
 }
@@ -1011,7 +1019,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 25;
+const APP_VERSION = 26;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1196,8 +1204,8 @@ function attSummary(codes) {
   if (n === br.length) label = 'All branches';
   else if (!n) label = 'No branches';
   else {
-    const cat = [...new Set(br.map(u => u.category))].find(c => br.every(u => (u.category === c) === sel.has(u.code)));
-    label = cat ? `${catName(cat)} branches only` : br.every(u => !!u.isNew === sel.has(u.code)) ? 'New branches only' : `${br.length - n} branch${br.length - n === 1 ? '' : 'es'} left out`;
+    const out = br.filter(u => !sel.has(u.code));
+    label = out.length <= 2 ? `All except ${out.map(u => u.name).join(' and ')}` : `${out.length} branches left out`;
   }
   return { n, total: br.length, ro, label };
 }
@@ -1212,9 +1220,7 @@ function openExpected() {
   const d = U.draft; const sel = new Set(d.expected);
   const branches = S.units.filter(u => !u.isRO).sort((a, b) => a.name.localeCompare(b.name));
   const ro = S.units.find(u => u.isRO);
-  const cats = [...new Set(branches.map(u => u.category))].sort((a, b) => ((CAT_ORDER.indexOf(a) + 1) || 99) - ((CAT_ORDER.indexOf(b) + 1) || 99));
-  const presets = [['all', 'All', u => true], ...cats.map(c => [c, catName(c), u => u.category === c])];
-  if (branches.some(u => u.isNew)) presets.push(['new', 'New', u => u.isNew]);
+  const presets = [['all', 'All', u => true]];
   let q = '';
   const draw = () => {
     const n = branches.filter(u => sel.has(u.code)).length;
@@ -1226,13 +1232,7 @@ function openExpected() {
     }).join('') + `<button class="pick" data-expq="none" aria-pressed="${!n}">None</button>`;
     const ql = q.trim().toLowerCase();
     const match = u => !ql || (u.name + ' ' + u.code + ' ' + (u.alpha || '')).toLowerCase().includes(ql);
-    const html = cats.map(c => {
-      const all = branches.filter(u => u.category === c), list = all.filter(match);
-      if (!list.length) return '';
-      const on = all.filter(u => sel.has(u.code)).length;
-      return `<div class="att-group"><span class="grow">${esc(catName(c))} · ${on} of ${all.length}</span>${ql ? '' : `<button class="att-grp-btn" data-exp-grp="${esc(c)}">${on === all.length ? 'Clear' : 'Select all'}</button>`}</div>` +
-        list.map(u => `<button class="att-row" data-exp="${u.code}" aria-pressed="${sel.has(u.code)}"><span class="code">${u.code}</span><div class="grow"><div class="title">${esc(u.name)}</div>${u.isNew ? '<div class="sub">New branch</div>' : ''}</div><span class="att-tick">${I.check}</span></button>`).join('');
-    }).join('');
+    const html = branches.filter(match).map(u => `<button class="att-row" data-exp="${u.code}" aria-pressed="${sel.has(u.code)}"><span class="code">${u.code}</span><div class="grow"><div class="title">${esc(u.name)}</div>${u.category === 'METRO' ? '<div class="sub">Metro branch</div>' : ''}</div><span class="att-tick">${I.check}</span></button>`).join('');
     $('#exp-list').innerHTML = html || `<div class="empty">No branch matches “${esc(q)}”.</div>`;
   };
   openSheet(`
@@ -1255,16 +1255,12 @@ function openExpected() {
       for (const u of branches) { sel.delete(u.code); if (f && f(u)) sel.add(u.code); }
       draw(); return;
     }
-    const g = e.target.closest('[data-exp-grp]');
-    if (g) {
-      const all = branches.filter(u => u.category === g.dataset.expGrp), full = all.every(u => sel.has(u.code));
-      all.forEach(u => full ? sel.delete(u.code) : sel.add(u.code)); draw(); return;
-    }
     const r = e.target.closest('[data-exp]');
     if (r) { const c = +r.dataset.exp; sel.has(c) ? sel.delete(c) : sel.add(c); draw(); }
   });
   $('#exp-done').onclick = () => {
     d.expected = S.units.map(u => u.code).filter(c => sel.has(c));
+    S.units.forEach(u => { u.expect = sel.has(u.code); }); save();   // remembered for the next meeting
     if (S.session && U.sessionDraft && d === U.sessionDraft) { S.session.expected = d.expected; U.draft = null; U.sessionDraft = null; save(); }
     closeSheet(); renderMain();
   };
