@@ -922,7 +922,7 @@ function viewShare() {
   <section class="card pad m-card">
     <div class="m-head"><div class="grow"><div class="m-title">Invite</div><div class="sub mono">${esc(s.meetingCode)}</div></div>
       <div class="icon-row">
-        <a class="round-btn wa" id="wa-link" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener" aria-label="Send on WhatsApp">${I.chat}</a>
+        <a class="mini-btn wa-solid" id="wa-link" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener" aria-label="Send invite on WhatsApp">${I.chat}Send invite</a>
         <button class="round-btn" data-act="share-native" aria-label="Share invite">${I.share}</button>
         <button class="round-btn" data-act="copy-share" aria-label="Copy invite">${I.copy}</button>
       </div></div>
@@ -1146,7 +1146,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 47;
+const APP_VERSION = 48;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
