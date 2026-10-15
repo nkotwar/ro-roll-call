@@ -588,7 +588,7 @@ function render() {
   manageWake();
 }
 function renderTop(title, { back = false, actions = '' } = {}) {
-  $('#top').innerHTML = `${back ? `<button class="back" data-act="back" aria-label="Back">${I.back}</button>` : '<img class="brand-mark" src="icon-192.png" alt="">'}<h1>${esc(title)}</h1>${actions}`;
+  $('#top').innerHTML = `${back ? `<button class="back" data-act="back" aria-label="Back">${I.back}</button>` : '<button class="brand-btn" data-act="about" aria-label="About Hazri"><img class="brand-mark" src="icon-192.png" alt=""></button>'}<h1>${esc(title)}</h1>${actions}`;
   ecgSync();
 }
 function renderMain() {
@@ -1117,7 +1117,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 36;
+const APP_VERSION = 37;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1149,7 +1149,7 @@ function versionCard() {
   <section class="card list"><div class="setting"><div class="grow"><div class="title">Version ${APP_VERSION}</div><div class="sub">${sub}</div></div>${btn}</div></section>`;
 }
 function viewSettings() {
-  renderTop('Settings', { actions: `<button class="icon-btn about-btn" data-act="about" aria-label="About Hazri">${I.info}</button>` });
+  renderTop('Settings');
   setTimeout(checkUpdate, 0);
   const st = S.settings, c = st.controls;
   const signed = G.valid() || st.signedIn;

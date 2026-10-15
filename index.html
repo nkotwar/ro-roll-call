@@ -88,7 +88,9 @@
 .ptr-hint svg{width:15px;height:15px}
 .ptr-hint.show{opacity:1;transform:translate(-50%,0)}
 /* About: an editorial field guide */
-.about-btn svg{width:20px;height:20px;color:var(--muted)}
+.brand-btn{border:0;background:none;padding:0;margin:0;display:grid;cursor:pointer;flex:none;border-radius:8px;-webkit-tap-highlight-color:transparent}
+.brand-btn:active .brand-mark{transform:scale(.92)}
+.brand-mark{transition:transform .12s}
 .ab{--serif:"Source Serif 4",Georgia,"Times New Roman",serif;padding:4px 4px 24px;color:var(--ink)}
 .ab-hero{text-align:center;padding:18px 8px 26px;border-bottom:1px solid var(--line);margin-bottom:6px}
 .ab-icon{width:64px;height:64px;border-radius:16px;box-shadow:0 4px 14px rgba(20,32,51,.18)}
