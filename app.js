@@ -869,6 +869,12 @@ function ring(joined, total) {
   const r = 40, c = 2 * Math.PI * r, f = total ? joined / total : 0;
   return `<div class="ring" role="img" aria-label="${joined} of ${total} branches joined"><svg viewBox="0 0 92 92"><circle cx="46" cy="46" r="${r}" fill="none" stroke-width="8" style="stroke:var(--surface-2)"/><circle cx="46" cy="46" r="${r}" fill="none" stroke-width="8" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${f ? c * (1 - f) : c}" style="stroke:var(--in);transition:stroke-dashoffset .6s"/></svg><div class="num"><b>${joined}/${total}</b><span>branches</span></div></div>`;
 }
+// Minutes since the scheduled Time of VC (not since the Meet link opened).
+function vcRun(t) {
+  const m = Math.floor((Date.now() - t) / 60000), a = Math.abs(m);
+  const f = a < 60 ? `${a} min` : `${Math.floor(a / 60)} h ${String(a % 60).padStart(2, '0')} min`;
+  return m < 0 ? `Starts in ${a < 1 ? 'under a minute' : f}` : m < 1 ? 'VC time is now' : `${f} since VC time`;
+}
 function syncLine(s) {
   if (s.error) {
     const re = s.error.code === 'reauth' || s.error.code === 'noclient';
@@ -924,6 +930,7 @@ function viewBoard() {
   <section class="card meet-head">
     <div class="meet-meta">
       <div class="row" style="gap:8px;flex-wrap:wrap"><span class="mono muted" style="font-size:13px">${esc(s.meetingCode)}</span>${d.when ? `<span class="faint">·</span><span class="sub">${esc(fmtWhen(d.when))}</span>` : ''}</div>
+      ${d.when && !s.ended ? `<div class="vc-run" data-since="${Date.parse(d.when)}">${vcRun(Date.parse(d.when))}</div>` : ''}
       ${d.agenda ? `<div class="agenda">${esc(d.agenda)}</div>` : ''}
       ${d.headedBy ? `<div class="sub">Headed by ${esc(d.headedBy)}</div>` : ''}
     </div>
@@ -1021,7 +1028,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 30;
+const APP_VERSION = 31;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1863,7 +1870,7 @@ document.addEventListener('visibilitychange', () => {
   if (S.pendingCall && U.leftForCall) { U.leftForCall = false; setTimeout(openCallFeedback, 350); }
   if (S.session && !S.session.ended) syncNow();
 });
-setInterval(() => { $$('[data-ago]').forEach(el => { el.textContent = ago(+el.dataset.ago || 0); }); }, 5000);
+setInterval(() => { $$('[data-ago]').forEach(el => { el.textContent = ago(+el.dataset.ago || 0); }); $$('[data-since]').forEach(el => { el.textContent = vcRun(+el.dataset.since); }); }, 5000);
 
 /* ───────────────────────── boot ───────────────────────── */
 if ('serviceWorker' in navigator && /^https:|^http:\/\/localhost/.test(location.href)) navigator.serviceWorker.register('sw.js').catch(() => {});
