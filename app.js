@@ -800,7 +800,7 @@ function viewCreate() {
     <div class="field"><label for="f-head">Headed by</label><input class="input" id="f-head" data-draft="headedBy" value="${esc(d.headedBy)}" placeholder="Name and designation">
       <div class="picks">${headPicks().map(h => `<button type="button" class="pick" aria-pressed="${h === d.headedBy}" data-act="draft-pick" data-k="headedBy" data-v="${esc(h)}">${esc(h)}</button>`).join('')}</div></div>
     <div class="field"><span class="flabel">Who should attend</span>
-      <button type="button" class="sug" data-act="pick-expected"><div class="grow"><div class="title">${exp - (roIn ? 1 : 0)} branches${roIn ? ' + RO staff' : ''}</div><div class="sub">Missing branches will show in the call list</div></div>${I.chev}</button></div>
+      ${attField(d.expected)}</div>
   </form>
   ${d.demo ? '' : `
   <div class="sec-label">Host controls</div>
@@ -1011,7 +1011,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 24;
+const APP_VERSION = 25;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1187,31 +1187,81 @@ function assign(key, target, remember) {
 }
 
 /* Expected branches sheet */
+const CAT_ORDER = ['URBAN', 'SEMI-URBAN', 'RURAL'];
+const catName = c => ({ URBAN: 'Urban', 'SEMI-URBAN': 'Semi-urban', RURAL: 'Rural', METRO: 'Metro' }[c] || (c ? c[0] + c.slice(1).toLowerCase() : 'Other'));
+function attSummary(codes) {
+  const br = S.units.filter(u => !u.isRO), sel = new Set(codes);
+  const n = br.filter(u => sel.has(u.code)).length, ro = S.units.some(u => u.isRO && sel.has(u.code));
+  let label;
+  if (n === br.length) label = 'All branches';
+  else if (!n) label = 'No branches';
+  else {
+    const cat = [...new Set(br.map(u => u.category))].find(c => br.every(u => (u.category === c) === sel.has(u.code)));
+    label = cat ? `${catName(cat)} branches only` : br.every(u => !!u.isNew === sel.has(u.code)) ? 'New branches only' : `${br.length - n} branch${br.length - n === 1 ? '' : 'es'} left out`;
+  }
+  return { n, total: br.length, ro, label };
+}
+function attField(codes) {
+  const a = attSummary(codes);
+  return `<button type="button" class="att-field" data-act="pick-expected">
+    <span class="att-num"><b>${a.n}</b><span>of ${a.total}</span></span>
+    <div class="grow"><div class="title">${esc(a.label)}</div><div class="sub">${a.ro ? 'RO staff counted too' : 'RO staff not counted'} · missing branches go to the call list</div></div>
+    <span class="att-chev">${I.chev}</span></button>`;
+}
 function openExpected() {
   const d = U.draft; const sel = new Set(d.expected);
   const branches = S.units.filter(u => !u.isRO).sort((a, b) => a.name.localeCompare(b.name));
   const ro = S.units.find(u => u.isRO);
+  const cats = [...new Set(branches.map(u => u.category))].sort((a, b) => ((CAT_ORDER.indexOf(a) + 1) || 99) - ((CAT_ORDER.indexOf(b) + 1) || 99));
+  const presets = [['all', 'All', u => true], ...cats.map(c => [c, catName(c), u => u.category === c])];
+  if (branches.some(u => u.isNew)) presets.push(['new', 'New', u => u.isNew]);
+  let q = '';
   const draw = () => {
-    $('#exp-list').innerHTML = branches.map(u => `<label class="setting" style="padding:10px 0"><span class="code">${u.code}</span><div class="grow"><div class="title">${esc(u.name)}</div><div class="sub">${esc((u.category || '').toLowerCase())}${u.isNew ? ' · new' : ''}</div></div><span class="switch"><input type="checkbox" data-exp="${u.code}" ${sel.has(u.code) ? 'checked' : ''}><span></span></span></label>`).join('');
-    $('#exp-count').textContent = branches.filter(u => sel.has(u.code)).length + ' selected';
+    const n = branches.filter(u => sel.has(u.code)).length;
+    $('#exp-count').textContent = `${n} of ${branches.length} branches`;
+    $('#exp-done').textContent = n ? `Done · ${n} branch${n === 1 ? '' : 'es'}` : 'Done';
+    $('#exp-presets').innerHTML = presets.map(([k, l, f]) => {
+      const on = branches.every(u => f(u) === sel.has(u.code));
+      return `<button class="pick" aria-pressed="${on}" data-expq="${k}">${l}<b>${branches.filter(f).length}</b></button>`;
+    }).join('') + `<button class="pick" data-expq="none" aria-pressed="${!n}">None</button>`;
+    const ql = q.trim().toLowerCase();
+    const match = u => !ql || (u.name + ' ' + u.code + ' ' + (u.alpha || '')).toLowerCase().includes(ql);
+    const html = cats.map(c => {
+      const all = branches.filter(u => u.category === c), list = all.filter(match);
+      if (!list.length) return '';
+      const on = all.filter(u => sel.has(u.code)).length;
+      return `<div class="att-group"><span class="grow">${esc(catName(c))} · ${on} of ${all.length}</span>${ql ? '' : `<button class="att-grp-btn" data-exp-grp="${esc(c)}">${on === all.length ? 'Clear' : 'Select all'}</button>`}</div>` +
+        list.map(u => `<button class="att-row" data-exp="${u.code}" aria-pressed="${sel.has(u.code)}"><span class="code">${u.code}</span><div class="grow"><div class="title">${esc(u.name)}</div>${u.isNew ? '<div class="sub">New branch</div>' : ''}</div><span class="att-tick">${I.check}</span></button>`).join('');
+    }).join('');
+    $('#exp-list').innerHTML = html || `<div class="empty">No branch matches “${esc(q)}”.</div>`;
   };
   openSheet(`
     <div class="sheet-head"><div class="grow"><h3>Who should attend</h3><div class="sub" id="exp-count"></div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
     <div class="sheet-body">
-      <div class="picks">${[['all', 'All branches'], ['URBAN', 'Urban'], ['SEMI-URBAN', 'Semi-urban'], ['RURAL', 'Rural'], ['new', 'New branches'], ['none', 'Clear']].map(([k, l]) => `<button class="pick" data-expq="${k}">${l}</button>`).join('')}</div>
-      ${ro ? `<label class="setting" style="padding:4px 0;border-bottom:1px solid var(--line)"><div class="grow"><div class="title">Count RO staff too</div><div class="sub">Treat the Regional Office like a branch</div></div><span class="switch"><input type="checkbox" data-exp="${ro.code}" ${sel.has(ro.code) ? 'checked' : ''}><span></span></span></label>` : ''}
-      <div id="exp-list" class="list"></div>
+      <div class="att-presets" id="exp-presets"></div>
+      <div class="search-wrap">${I.search}<input class="input" id="exp-q" type="search" placeholder="Search branch or code" autocomplete="off"></div>
+      ${ro ? `<label class="setting att-ro"><div class="grow"><div class="title">Count RO staff too</div><div class="sub">Treat the Regional Office like a branch</div></div><span class="switch"><input type="checkbox" id="exp-ro" ${sel.has(ro.code) ? 'checked' : ''}><span></span></span></label>` : ''}
+      <div id="exp-list"></div>
     </div>
     <div class="sheet-foot"><button class="btn btn-primary btn-block" id="exp-done">Done</button></div>`);
   draw();
   const sheet = $('.sheet');
-  sheet.addEventListener('change', e => { const c = e.target.dataset.exp; if (!c) return; e.target.checked ? sel.add(+c) : sel.delete(+c); draw(); });
+  $('#exp-q').addEventListener('input', e => { q = e.target.value; draw(); });
+  if (ro) $('#exp-ro').addEventListener('change', e => { e.target.checked ? sel.add(ro.code) : sel.delete(ro.code); });
   sheet.addEventListener('click', e => {
-    const b = e.target.closest('[data-expq]'); if (!b) return;
-    const k = b.dataset.expq;
-    for (const u of branches) sel.delete(u.code);
-    if (k !== 'none') for (const u of branches) if (k === 'all' || (k === 'new' ? u.isNew : u.category === k)) sel.add(u.code);
-    draw();
+    const p = e.target.closest('[data-expq]');
+    if (p) {
+      const k = p.dataset.expq, f = (presets.find(x => x[0] === k) || [])[2];
+      for (const u of branches) { sel.delete(u.code); if (f && f(u)) sel.add(u.code); }
+      draw(); return;
+    }
+    const g = e.target.closest('[data-exp-grp]');
+    if (g) {
+      const all = branches.filter(u => u.category === g.dataset.expGrp), full = all.every(u => sel.has(u.code));
+      all.forEach(u => full ? sel.delete(u.code) : sel.add(u.code)); draw(); return;
+    }
+    const r = e.target.closest('[data-exp]');
+    if (r) { const c = +r.dataset.exp; sel.has(c) ? sel.delete(c) : sel.add(c); draw(); }
   });
   $('#exp-done').onclick = () => {
     d.expected = S.units.map(u => u.code).filter(c => sel.has(c));
