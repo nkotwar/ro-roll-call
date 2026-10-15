@@ -472,7 +472,7 @@ function startDemo(details, expected) {
   const s = newSession({ source: 'demo', meetingCode: 'dmo-demo-vcx', meetingUri: 'https://meet.google.com/dmo-demo-vcx', details, expected, state: 'live', demo: { tick: 0, plan: [] } });
   const plan = [];
   const self = personById.get('E139535');
-  if (self) plan.push({ at: 0, key: 'g:demo-self', name: pretty(self.name), kind: 'google', tag: { p: self.id } });
+  if (self) plan.push({ at: 0, key: 'g:demo-self', name: pretty(self.name), kind: 'google' });
   let at = 1;
   for (const code of expected) {
     const u = unitByCode.get(code); if (!u || Math.random() < 0.3) continue;
@@ -485,24 +485,19 @@ function startDemo(details, expected) {
       const name = kind === 'phone' ? '+91 ' + String(p.phone || '9800000000').slice(0, 5) + ' ••' + String(p.phone || '00').slice(-3) : demoName(p, v);
       const key = kind === 'google' ? 'g:demo-' + p.empId + '-' + v : (kind === 'guest' ? 'n:' : 't:') + normKey(name);
       const join = at + Math.floor(Math.random() * 6);
-      plan.push({ at: join, key, name, kind, tag: { p: p.id }, unit: code });
+      plan.push({ at: join, key, name, kind });
     }
     if (Math.random() < 0.5) at++;
   }
   const branchAcct = unitByCode.get(expected[Math.floor(Math.random() * expected.length)]);
-  if (branchAcct && !branchAcct.isRO) plan.push({ at: 3, key: 'n:' + normKey('CBI ' + branchAcct.name), name: 'CBI ' + branchAcct.name, kind: 'guest', tag: { u: branchAcct.code }, unit: branchAcct.code });
-  // A few people drop off part-way (3 to 5), and one of them rejoins later. Leavers are picked from
-  // branches with a single attendee, so the branch moves to "Joined & left".
-  const perUnit = {}; plan.forEach(e => { if (e.unit) perUnit[e.unit] = (perUnit[e.unit] || 0) + 1; });
-  const joins = plan.filter(e => e.unit && perUnit[e.unit] === 1).sort(() => Math.random() - .5);
+  if (branchAcct && !branchAcct.isRO) plan.push({ at: 3, key: 'n:' + normKey('CBI ' + branchAcct.name), name: 'CBI ' + branchAcct.name, kind: 'guest' });
+  // A few people drop off part-way (3 to 5), and one of them rejoins later.
+  const joins = plan.filter(e => !e.leave && e.key !== 'g:demo-self').sort(() => Math.random() - .5);
   const k = Math.min(joins.length, 3 + Math.floor(Math.random() * 3));
-  const leavers = new Set(joins.slice(0, k).map(e => e.key));
-  // Most joiners arrive already tagged (for this demo only, nothing is saved); three stay untagged to practise tagging.
-  plan.filter(e => e.tag && !leavers.has(e.key) && e.key !== 'g:demo-self').sort(() => Math.random() - .5).slice(0, 3).forEach(e => { delete e.tag; });
   joins.slice(0, k).forEach((e, i) => {
     const out = e.at + 3 + Math.floor(Math.random() * 6);
     plan.push({ at: out, key: e.key, leave: true });
-    if (i === 0) plan.push({ at: out + 4 + Math.floor(Math.random() * 4), key: e.key, name: e.name, kind: e.kind, tag: e.tag });
+    if (i === 0) plan.push({ at: out + 4 + Math.floor(Math.random() * 4), key: e.key, name: e.name, kind: e.kind });
   });
   s.demo.plan = plan;
   return s;
@@ -514,7 +509,6 @@ function syncDemo(s) {
   for (const ev of s.demo.plan.filter(e => e.at === t)) {
     if (ev.leave) { if (seen[ev.key]) { seen[ev.key].active = false; seen[ev.key].lastEnd = new Date().toISOString(); } continue; }
     seen[ev.key] = { key: ev.key, name: ev.name, kind: ev.kind, first: new Date().toISOString(), lastEnd: null, active: true };
-    if (ev.tag && !targetFor(ev.key)) s.temp[ev.key] = ev.tag;
   }
   mergeParts(s, seen, 'demo');
   s.state = 'live';
@@ -1025,7 +1019,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 27;
+const APP_VERSION = 26;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
