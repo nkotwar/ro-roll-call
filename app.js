@@ -917,35 +917,36 @@ function viewShare() {
   const s = S.session;
   renderTop('Meeting', { back: true });
   if (!s) return '';
-  const d = s.details, msg = shareText(s);
+  const d = s.details, msg = shareText(s), b = board();
   return `
-  <div class="sec-label">Invite</div>
-  <section class="card pad" style="display:flex;flex-direction:column;gap:12px">
-    <div class="row"><span class="mono muted">${esc(s.meetingCode)}</span></div>
+  <section class="card pad m-card">
+    <div class="m-head"><div class="grow"><div class="m-title">Attendance</div><div class="sub">${b.joined} of ${b.total} branches joined · ${b.inCount} in now</div></div></div>
+    <div class="mini-row">
+      <button class="mini-btn primary" data-act="attendance-image">${I.share}Share image</button>
+      <button class="mini-btn" data-act="copy-summary">${I.copy}Copy as text</button>
+    </div>
+  </section>
+
+  <section class="card pad m-card">
+    <div class="m-head"><div class="grow"><div class="m-title">Invite</div><div class="sub mono">${esc(s.meetingCode)}</div></div></div>
     ${s.controlsNote ? `<div class="banner warn">${I.alert}<div>${esc(s.controlsNote)}</div></div>` : ''}
     <div class="field"><label for="m-when">Time of VC</label><input class="input" type="datetime-local" id="m-when" data-det="when" value="${esc(d.when ? toLocalInput(new Date(d.when)) : '')}"></div>
     <div class="field"><label for="m-agenda">Agenda</label><textarea class="input" id="m-agenda" rows="2" data-det="agenda" placeholder="e.g. Q2 RAC review and NPA recovery targets">${esc(d.agenda)}</textarea></div>
     <div class="field"><label for="m-head">Headed by</label><input class="input" id="m-head" data-det="headedBy" value="${esc(d.headedBy)}" placeholder="Name and designation">
       <div class="picks" id="m-head-picks">${headPicks().map(h => `<button type="button" class="pick" aria-pressed="${h === d.headedBy}" data-act="det-pick" data-v="${esc(h)}">${esc(h)}</button>`).join('')}</div></div>
-    <span class="hint">The invite is written from these details, with the Meet link.</span>
-    <div class="share-grid">
-      <button class="btn btn-primary" data-act="share-native">${I.share}Share…</button>
-      <a class="btn btn-soft" id="wa-link" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">${I.chat}WhatsApp</a>
-      <button class="btn btn-ghost" data-act="copy-share">${I.copy}Copy</button>
-      <a class="btn btn-ghost" href="${esc(s.meetingUri)}" target="_blank" rel="noopener">${I.video}Join</a>
+    <div class="mini-row">
+      <a class="mini-btn wa" id="wa-link" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">${I.chat}WhatsApp</a>
+      <button class="mini-btn" data-act="share-native">${I.share}Share…</button>
+      <button class="mini-btn" data-act="copy-share">${I.copy}Copy</button>
     </div>
   </section>
 
-  <div class="sec-label">Attendance</div>
-  <section class="card pad share-grid">
-    <button class="btn btn-soft" data-act="attendance-image">${I.share}Share image</button>
-    <button class="btn btn-ghost" data-act="copy-summary">${I.copy}Copy as text</button>
+  <section class="m-card-plain">
+    <div class="sec-label" style="margin:0 0 8px">Who should attend</div>
+    ${attField(s.expected, 'edit-expected')}
   </section>
 
-  <div class="sec-label">Who should attend</div>
-  ${attField(s.expected, 'edit-expected')}
-
-  <button class="btn btn-primary btn-block" data-act="to-board" style="margin-top:6px">Go to live board</button>`;
+  <button class="link-btn" data-act="to-board">Go to live board ${I.chev}</button>`;
 }
 function onDetail(t) {
   const s = S.session; if (!s) return;
@@ -1143,7 +1144,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 42;
+const APP_VERSION = 43;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
