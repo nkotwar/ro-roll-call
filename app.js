@@ -1006,11 +1006,12 @@ function ptrHint() {
   U.hintFor = S.session.id; h.shown++; save();
   setTimeout(() => {
     if (U.tab !== 'meet' || U.route) return;
-    const el = document.createElement('div'); el.className = 'ptr-hint'; el.innerHTML = `${I.down}Pull down to refresh`;
-    el.style.top = ($('#top').getBoundingClientRect().bottom + 10) + 'px';
+    const el = document.createElement('div'); el.className = 'ptr-hint'; el.setAttribute('aria-label', 'Pull down to refresh'); el.innerHTML = I.down;
+    el.style.top = ($('#top').getBoundingClientRect().bottom + 3) + 'px';
     document.body.appendChild(el);
-    requestAnimationFrame(() => el.classList.add('show'));
-    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 400); }, 3800);
+    const m = $('#main');
+    requestAnimationFrame(() => { el.classList.add('show'); m.classList.add('nudge'); });
+    setTimeout(() => { el.remove(); m.classList.remove('nudge'); }, 2700);
   }, 700);
 }
 function viewBoard() {
@@ -1150,7 +1151,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 38;
+const APP_VERSION = 39;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
