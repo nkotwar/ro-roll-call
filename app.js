@@ -1011,7 +1011,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 22;
+const APP_VERSION = 23;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1738,6 +1738,48 @@ function swipeTabs(dir) {
     const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
     if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.6 || Date.now() - t0 > 700) return;
     swipeTabs(dx < 0 ? 1 : -1);
+  }, { passive: true });
+})();
+
+/* Pull to refresh on the Meeting tab: runs the board's own refresh (no page reload),
+   so the heartbeat line and scroll position carry on. The browser's own pull-to-refresh is off. */
+(() => {
+  const el = document.createElement('div'); el.id = 'ptr'; el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = '<img src="cbi-emblem.png" alt="">'; document.body.appendChild(el);
+  const MAX = 110, ARM = 64;
+  let y0 = 0, x0 = 0, pulling = false, armed = false, busy = false, d = 0;
+  const can = () => U.tab === 'meet' && !U.route && !!S.session && !busy && !$('#layer .sheet') && (window.scrollY || document.documentElement.scrollTop) <= 0;
+  const place = (shown, spin) => {
+    const top = $('#top').getBoundingClientRect().bottom;
+    el.style.top = (top - 44) + 'px';
+    el.style.transform = `translateY(${shown}px) rotate(${spin}deg) scale(${armed ? 1.08 : 1})`;
+    el.style.opacity = Math.min(1, shown / 40);
+  };
+  const reset = () => { el.classList.remove('spin'); el.style.transition = 'transform .25s ease, opacity .25s ease'; place(0, 0); el.style.opacity = 0; setTimeout(() => { el.style.transition = ''; }, 260); };
+  addEventListener('touchstart', e => {
+    if (e.touches.length !== 1 || !can()) { pulling = false; return; }
+    const t = e.touches[0]; y0 = t.clientY; x0 = t.clientX; pulling = true; armed = false; d = 0;
+  }, { passive: true });
+  addEventListener('touchmove', e => {
+    if (!pulling) return;
+    const t = e.touches[0], dy = t.clientY - y0, dx = t.clientX - x0;
+    if (d === 0 && (dy <= 0 || Math.abs(dx) > dy)) { pulling = false; return; }  // not a downward pull
+    d = Math.max(0, dy);
+    const shown = Math.min(MAX, d * .5);
+    const was = armed; armed = shown >= ARM;
+    if (armed && !was) { try { navigator.vibrate && navigator.vibrate(10); } catch (err) {} }
+    place(shown, shown * 3);
+  }, { passive: true });
+  addEventListener('touchend', async () => {
+    if (!pulling) return; pulling = false;
+    if (!armed) { reset(); return; }
+    busy = true; armed = false;
+    el.style.transition = 'transform .2s ease'; place(ARM, 0); el.classList.add('spin');
+    const t0 = Date.now();
+    try { await syncNow(); } catch (err) {}
+    while (syncing) await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, Math.max(0, 650 - (Date.now() - t0))));
+    busy = false; reset();
   }, { passive: true });
 })();
 
