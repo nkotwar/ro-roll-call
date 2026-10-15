@@ -529,6 +529,10 @@ async function syncNow() {
   syncing = false;
   if (S.session !== s) return;
   const fresh = Object.values(s.parts).filter(p => p.active && !before.has(p.key));
+  const gone = [...before].filter(k => !(s.parts[k] && s.parts[k].active)).length;
+  ecgSync();
+  if (ECG.sid === s.id) ecgEvents(fresh.length, gone); // the first sync after opening only primes, so people already in don't spike
+  if (!s.error) ECG.sid = s.id;
   if (fresh.length) {
     try { navigator.vibrate && navigator.vibrate(fresh.some(p => targetFor(p.key)) ? 25 : [20, 60, 20]); } catch (e) {}
     U.flash = new Set(fresh.map(p => p.key));
@@ -576,6 +580,7 @@ function render() {
 }
 function renderTop(title, { back = false, actions = '' } = {}) {
   $('#top').innerHTML = `${back ? `<button class="back" data-act="back" aria-label="Back">${I.back}</button>` : '<img class="brand-mark" src="icon-192.png" alt="">'}<h1>${esc(title)}</h1>${actions}`;
+  ecgSync();
 }
 function renderMain() {
   const m = $('#main');
@@ -665,6 +670,108 @@ function confetti(from, reduce) {
   };
   requestAnimationFrame(step);
 }
+
+/* ───────────────────────── header ECG ─────────────────────────
+   While a meeting is live, the header's red line becomes a monitor-style heartbeat.
+   Beats come at a random rhythm that quickens with the number of people in; new joiners
+   add a tall red spike (max 3 per refresh), leavers a small dip (max 2). Faint ripple when empty. */
+const ECG = { cv: null, ctx: null, mode: 'off', n: 0, queue: [], sid: null, raf: 0, last: 0, buf: null, red: null, head: 0, cur: null, dist: 0, gap: 0, W: 0, H: 0, dpr: 1, col: '#146CC0', reduce: false };
+const ECG_SPEED = 110, ECG_QRS = 64, ECG_SCALE = 11;
+const gauss = (t, c, w) => Math.exp(-((t - c) ** 2) / (2 * w * w));
+const ecgShape = t => .16 * gauss(t, .12, .045) - .14 * gauss(t, .40, .018) + gauss(t, .46, .022) - .32 * gauss(t, .53, .02) + .26 * gauss(t, .80, .07);
+function ecgNormal() {
+  const live = ECG.mode === 'live', r = (a, b) => a + Math.random() * (b - a);
+  const avg = live ? Math.max(.6, 1.7 - ECG.n * .042) : 2.6;
+  const period = avg * (live ? r(.65, 1.35) : r(.6, 1.4));
+  const skip = live && Math.random() < .08;
+  const amp = skip ? 0 : live ? r(.85, 1.15) : r(.08, .18);
+  ECG.gap = Math.max(12, period * ECG_SPEED - ECG_QRS);
+  return { len: ECG_QRS, fn: t => amp * ecgShape(t), red: 0 };
+}
+function ecgSample() {
+  for (;;) {
+    const c = ECG.cur;
+    if (c && ECG.dist < c.len) { const y = c.fn(ECG.dist / c.len); ECG.dist++; return [y, c.red]; }
+    ECG.cur = null;
+    if (ECG.queue.length) { ECG.cur = ECG.queue.shift(); ECG.dist = 0; continue; }
+    if (ECG.gap > 0) { ECG.gap--; return [0, 0]; }
+    ECG.cur = ecgNormal(); ECG.dist = 0;
+  }
+}
+function ecgResize() {
+  const cv = ECG.cv; if (!cv || !cv.isConnected) return;
+  ECG.dpr = Math.min(2, devicePixelRatio || 1); ECG.W = cv.clientWidth; ECG.H = cv.clientHeight;
+  if (!ECG.W) return;
+  cv.width = ECG.W * ECG.dpr; cv.height = ECG.H * ECG.dpr;
+  const L = Math.ceil(ECG.W) + 2;
+  if (!ECG.buf || ECG.buf.length !== L) { ECG.buf = new Float32Array(L).fill(NaN); ECG.red = new Uint8Array(L); ECG.head = 0; }
+}
+function ecgStep(dt) {
+  if (!ECG.buf) ecgResize(); if (!ECG.buf) return;
+  const L = ECG.buf.length;
+  let n = Math.round(ECG_SPEED * dt);
+  while (n-- > 0) {
+    ECG.head = (ECG.head + 1) % L;
+    const [y, red] = ecgSample(); ECG.buf[ECG.head] = y; ECG.red[ECG.head] = red;
+    for (let k = 1; k <= 14; k++) ECG.buf[(ECG.head + k) % L] = NaN;
+  }
+}
+function ecgDraw() {
+  const { ctx: c, W, H, dpr, buf, red } = ECG; if (!c || !buf) return;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, H);
+  const base = H - 6, L = buf.length;
+  c.fillStyle = 'rgba(210,8,56,.25)'; c.fillRect(0, base - .5, W, 1);
+  c.lineWidth = 1.6; c.lineJoin = c.lineCap = 'round';
+  for (let k = 1; k < L; k++) {
+    const i = (ECG.head - k + L) % L, j = (i + 1) % L;
+    if (isNaN(buf[i]) || isNaN(buf[j])) continue;
+    c.globalAlpha = Math.max(0, 1 - k / L * .9);
+    c.strokeStyle = red[i] || red[j] ? '#D20838' : ECG.col;
+    c.beginPath(); c.moveTo(i, base - buf[i] * ECG_SCALE); c.lineTo(i + 1, base - buf[j] * ECG_SCALE); c.stroke();
+  }
+  c.globalAlpha = 1;
+  if (!ECG.reduce) {
+    const hy = base - (buf[ECG.head] || 0) * ECG_SCALE;
+    c.shadowColor = '#D20838'; c.shadowBlur = 8; c.fillStyle = '#D20838';
+    c.beginPath(); c.arc(ECG.head, hy, 2.4, 0, 7); c.fill(); c.shadowBlur = 0;
+  }
+}
+function ecgLoop(ts) {
+  ECG.raf = 0;
+  if (ECG.mode === 'off' || document.hidden || ECG.reduce) return;
+  const dt = ECG.last ? Math.min(.1, (ts - ECG.last) / 1000) : 1 / 60; ECG.last = ts;
+  ecgStep(dt); ecgDraw();
+  ECG.raf = requestAnimationFrame(ecgLoop);
+}
+function ecgSync() {
+  const s = S.session;
+  const n = s ? Object.values(s.parts).filter(p => p.active).length : 0;
+  const mode = !s || s.ended ? 'off' : n > 0 ? 'live' : 'faint';
+  ECG.mode = mode; ECG.n = n;
+  document.documentElement.classList.toggle('ecg-on', mode !== 'off');
+  if (mode === 'off') { if (ECG.cv) ECG.cv.remove(); cancelAnimationFrame(ECG.raf); ECG.raf = 0; ECG.queue = []; return; }
+  if (!ECG.cv) { ECG.cv = document.createElement('canvas'); ECG.cv.className = 'ecg'; ECG.cv.setAttribute('aria-hidden', 'true'); ECG.ctx = ECG.cv.getContext('2d'); }
+  const top = $('#top'); if (ECG.cv.parentNode !== top) top.appendChild(ECG.cv);
+  ECG.col = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#146CC0';
+  ECG.reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  ecgResize();
+  if (ECG.reduce) {   // a still heartbeat shape, no sweep
+    const L = ECG.buf ? ECG.buf.length : 0;
+    for (let x = 0; x < L; x++) { const ph = x % 150; ECG.buf[x] = ph < ECG_QRS ? (mode === 'live' ? 1 : .15) * ecgShape(ph / ECG_QRS) : 0; ECG.red[x] = 0; }
+    ECG.head = L - 1; ecgDraw(); return;
+  }
+  if (!ECG.raf && !document.hidden) { ECG.last = 0; ECG.raf = requestAnimationFrame(ecgLoop); }
+}
+function ecgEvents(joined, left) {
+  if (ECG.mode === 'off' || ECG.reduce) return;
+  const j = Math.min(joined, 3);
+  for (let i = 0; i < j; i++) {
+    const A = i === 2 && joined > 3 ? 1.75 : 1.4 * (.95 + Math.random() * .1);
+    ECG.queue.push({ len: 30, red: 1, fn: t => A * gauss(t, .45, .085) - .28 * A * gauss(t, .62, .06) });
+  }
+  for (let i = 0; i < Math.min(left, 2); i++) ECG.queue.push({ len: 34, red: 0, fn: t => -.42 * gauss(t, .5, .16) });
+}
+addEventListener('resize', () => { if (ECG.mode !== 'off') { ecgResize(); ecgDraw(); } });
 
 /* ───────────────────────── views: create + share ───────────────────────── */
 function draftDefault(demo) {
@@ -904,7 +1011,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 21;
+const APP_VERSION = 22;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1658,7 +1765,7 @@ function startCall(el) {
   setTimeout(() => { if (S.pendingCall && !U.leftForCall && !document.hidden) openCallFeedback(); }, 4000);
 }
 document.addEventListener('visibilitychange', () => {
-  manageWake();
+  manageWake(); ecgSync();
   if (document.hidden) { if (S.pendingCall) U.leftForCall = true; return; }
   if (S.pendingCall && U.leftForCall) { U.leftForCall = false; setTimeout(openCallFeedback, 350); }
   if (S.session && !S.session.ended) syncNow();
