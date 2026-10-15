@@ -728,14 +728,15 @@ function ecgStep(dt) {
 function ecgDraw() {
   const { ctx: c, W, H, dpr, buf, red } = ECG; if (!c || !buf) return;
   c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, H);
-  const base = H - 6, L = buf.length;
+  const base = H - 20, L = buf.length;
   c.fillStyle = 'rgba(210,8,56,.25)'; c.fillRect(0, base - .5, W, 1);
   c.lineWidth = 1.6; c.lineJoin = c.lineCap = 'round';
   for (let k = 1; k < L; k++) {
     const i = (ECG.head - k + L) % L, j = (i + 1) % L;
     if (isNaN(buf[i]) || isNaN(buf[j])) continue;
     c.globalAlpha = Math.max(0, 1 - k / L * .9);
-    c.strokeStyle = red[i] || red[j] ? '#D20838' : ECG.col;
+    const f = red[i] || red[j];
+    c.strokeStyle = f === 1 ? '#D20838' : f === 2 ? '#E8A317' : ECG.col;
     c.beginPath(); c.moveTo(i, base - buf[i] * ECG_SCALE); c.lineTo(i + 1, base - buf[j] * ECG_SCALE); c.stroke();
   }
   c.globalAlpha = 1;
@@ -778,7 +779,7 @@ function ecgEvents(joined, left) {
     const A = i === 2 && joined > 3 ? 1.75 : 1.4 * (.95 + Math.random() * .1);
     ECG.queue.push({ len: 30, red: 1, fn: t => A * gauss(t, .45, .085) - .28 * A * gauss(t, .62, .06) });
   }
-  for (let i = 0; i < Math.min(left, 2); i++) ECG.queue.push({ len: 34, red: 0, fn: t => -.42 * gauss(t, .5, .16) });
+  for (let i = 0; i < Math.min(left, 2); i++) { const A = 1.35 * (.95 + Math.random() * .1); ECG.queue.push({ len: 30, red: 2, fn: t => -A * gauss(t, .45, .085) + .28 * A * gauss(t, .62, .06) }); }
 }
 addEventListener('resize', () => { if (ECG.mode !== 'off') { ecgResize(); ecgDraw(); } });
 
@@ -1020,7 +1021,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 28;
+const APP_VERSION = 29;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
