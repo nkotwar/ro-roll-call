@@ -116,6 +116,7 @@ S.settings = { ...fresh().settings, ...S.settings, controls: { ...DEFAULT_CONTRO
 S.settings.clientId = cleanClientId(S.settings.clientId) || DEFAULT_CLIENT_ID;
 delete S.settings.controls.viewer; delete S.settings.unsupported;
 delete S.settings.theme; // the Central Bank look is the only theme now
+Object.keys(S.idents || {}).forEach(k => { if (k.startsWith('g:demo-')) delete S.idents[k]; });
 if (!S.metroDefaultFixed) { (S.units || []).forEach(u => { if (u.category === 'METRO') u.expect = false; }); S.metroDefaultFixed = true; }
 let saveFailed = false;
 function save() {
@@ -137,7 +138,7 @@ const unitOf = target => {
   const p = personById.get(target.p);
   return p ? unitByCode.get(p.unit) : null;
 };
-const targetFor = key => (S.session && S.session.temp && S.session.temp[key]) || (S.idents[key] && S.idents[key].to) || null;
+const targetFor = key => { const t = S.session && S.session.temp && S.session.temp[key]; if (t) return t.none ? null : t; return (S.idents[key] && S.idents[key].to) || null; };
 const targetLabel = t => {
   if (!t) return '';
   if (t.u != null) { const u = unitByCode.get(t.u); return u ? (u.isRO ? 'Regional Office' : u.name + ' branch') : 'Unknown'; }
@@ -1019,7 +1020,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 26;
+const APP_VERSION = 28;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1149,7 +1150,8 @@ function openTag(key, mode) {
       ${sugg.length ? `<div class="flabel">Suggested</div><div class="results">${sugg.map((x, i) => pickRow(x.t, i === 0 && x.score >= 0.4)).join('')}</div>` : ''}
       <div class="search-wrap">${I.search}<input class="input" id="tag-q" type="search" placeholder="Search staff, branch or emp ID" autocomplete="off"></div>
       <div class="results" id="tag-results"></div>
-      ${s && mode !== 'relink' ? `<label class="setting" style="padding:4px 0"><div class="grow"><div class="title">Remember for future meetings</div><div class="sub">${kind === 'google' ? 'Recognise this Google account automatically next time' : 'Recognise this display name automatically next time'}</div></div><span class="switch"><input type="checkbox" id="tag-remember" ${rememberDefault ? 'checked' : ''}><span></span></span></label>` : ''}
+      ${s && s.source === 'demo' && mode !== 'relink' ? `<div class="hint" style="margin:0">Demo meeting: tags here are for practice and are not saved.</div>` : ''}
+      ${s && s.source !== 'demo' && mode !== 'relink' ? `<label class="setting" style="padding:4px 0"><div class="grow"><div class="title">Remember for future meetings</div><div class="sub">${kind === 'google' ? 'Recognise this Google account automatically next time' : 'Recognise this display name automatically next time'}</div></div><span class="switch"><input type="checkbox" id="tag-remember" ${rememberDefault ? 'checked' : ''}><span></span></span></label>` : ''}
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         ${cur ? `<button class="btn btn-danger" style="flex:1" data-act="untag">${I.x}Remove tag</button>` : ''}
         ${s && part && !cur ? `<button class="btn btn-ghost" style="flex:1" data-act="ignore">${s.ignored[key] ? 'Stop ignoring' : 'Not from a branch'}</button>` : ''}
@@ -1178,6 +1180,7 @@ function searchTargets(q) {
 }
 function assign(key, target, remember) {
   const s = S.session;
+  if (s && s.source === 'demo' && s.parts[key]) remember = false;   // demo tags stay in the demo, never saved
   const prevIdent = S.idents[key] ? JSON.parse(JSON.stringify(S.idents[key])) : null;
   const prevTemp = s && s.temp[key] ? { ...s.temp[key] } : null;
   const name = (s && s.parts[key] && s.parts[key].name) || (S.idents[key] && S.idents[key].name) || key;
@@ -1683,6 +1686,7 @@ const ACT = {
   },
   untag: () => {
     const key = $('.sheet').dataset.key; const prev = S.idents[key]; const prevT = S.session && S.session.temp[key];
+    if (S.session && S.session.source === 'demo' && S.session.parts[key]) { S.session.temp[key] = { none: true }; save(); closeSheet(); render(); toast('Tag removed', () => { if (prevT) S.session.temp[key] = prevT; else delete S.session.temp[key]; save(); render(); }); return; }
     delete S.idents[key]; if (S.session) delete S.session.temp[key]; markDirty(); save(); closeSheet(); render();
     toast('Tag removed', () => { if (prev) S.idents[key] = prev; if (prevT) S.session.temp[key] = prevT; save(); render(); });
   },
