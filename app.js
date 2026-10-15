@@ -873,7 +873,7 @@ function viewCreate() {
   return `
   <form id="create-form" class="card pad" style="display:flex;flex-direction:column;gap:16px" autocomplete="off">
     ${d.demo ? `<div class="banner info">${I.play}<div>A demo meeting simulates branches joining every few seconds, so you can practise tagging. Nothing is sent to Google.</div></div>` : ''}
-    <div class="field"><label for="f-when">Time of VC</label><input class="input" type="datetime-local" id="f-when" value="${esc(d.when)}" data-draft="when" required></div>
+    <div class="when-row"><span class="flabel">Time of VC</span><label class="when-pill">${I.clock}<span class="when-txt">${esc(whenPill(d.when))}</span><input type="datetime-local" id="f-when" value="${esc(d.when)}" data-draft="when" aria-label="Time of VC" required></label></div>
     <div class="field"><label for="f-agenda">Agenda</label><textarea class="input" id="f-agenda" data-draft="agenda" rows="2" placeholder="e.g. Q2 RAC review and NPA recovery targets">${esc(d.agenda)}</textarea>
       ${agendas.length ? `<div class="picks">${agendas.map(a => `<button type="button" class="pick" data-act="draft-pick" data-k="agenda" data-v="${esc(a)}">${esc(a.length > 34 ? a.slice(0, 32) + '…' : a)}</button>`).join('')}</div>` : ''}</div>
     <div class="field"><label for="f-head">Headed by</label><input class="input" id="f-head" data-draft="headedBy" value="${esc(d.headedBy)}" placeholder="Name and designation">
@@ -920,25 +920,25 @@ function viewShare() {
   const d = s.details, msg = shareText(s), b = board();
   return `
   <section class="card pad m-card">
-    <div class="m-head"><div class="grow"><div class="m-title">Attendance</div><div class="sub">${b.joined} of ${b.total} branches joined · ${b.inCount} in now</div></div></div>
-    <div class="mini-row">
-      <button class="mini-btn primary" data-act="attendance-image">${I.share}Share image</button>
-      <button class="mini-btn" data-act="copy-summary">${I.copy}Copy as text</button>
-    </div>
-  </section>
-
-  <section class="card pad m-card">
     <div class="m-head"><div class="grow"><div class="m-title">Invite</div><div class="sub mono">${esc(s.meetingCode)}</div></div>
-      <label class="when-pill" title="Time of VC">${I.clock}<span id="m-when-txt">${esc(whenPill(d.when))}</span><input type="datetime-local" id="m-when" data-det="when" aria-label="Time of VC" value="${esc(d.when ? toLocalInput(new Date(d.when)) : '')}"></label></div>
+      <div class="icon-row">
+        <a class="round-btn wa" id="wa-link" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener" aria-label="Send on WhatsApp">${I.chat}</a>
+        <button class="round-btn" data-act="share-native" aria-label="Share invite">${I.share}</button>
+        <button class="round-btn" data-act="copy-share" aria-label="Copy invite">${I.copy}</button>
+      </div></div>
     ${s.controlsNote ? `<div class="banner warn">${I.alert}<div>${esc(s.controlsNote)}</div></div>` : ''}
+    <div class="when-row"><span class="flabel">Time of VC</span><label class="when-pill">${I.clock}<span class="when-txt" id="m-when-txt">${esc(whenPill(d.when))}</span><input type="datetime-local" id="m-when" data-det="when" aria-label="Time of VC" value="${esc(d.when ? toLocalInput(new Date(d.when)) : '')}"></label></div>
     <div class="field"><label for="m-agenda">Agenda</label><textarea class="input" id="m-agenda" rows="2" data-det="agenda" placeholder="e.g. Q2 RAC review and NPA recovery targets">${esc(d.agenda)}</textarea></div>
     <div class="field"><label for="m-head">Headed by</label><input class="input" id="m-head" data-det="headedBy" value="${esc(d.headedBy)}" placeholder="Name and designation">
       <div class="picks" id="m-head-picks">${headPicks().map(h => `<button type="button" class="pick" aria-pressed="${h === d.headedBy}" data-act="det-pick" data-v="${esc(h)}">${esc(h)}</button>`).join('')}</div></div>
-    <div class="mini-row">
-      <a class="mini-btn wa" id="wa-link" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">${I.chat}WhatsApp</a>
-      <button class="mini-btn" data-act="share-native">${I.share}Share…</button>
-      <button class="mini-btn" data-act="copy-share">${I.copy}Copy</button>
-    </div>
+  </section>
+
+  <section class="card pad m-card">
+    <div class="m-head"><div class="grow"><div class="m-title">Attendance</div><div class="sub">${b.joined} of ${b.total} joined · ${b.inCount} in now</div></div>
+      <div class="icon-row">
+        <button class="mini-btn primary" data-act="attendance-image">${I.share}Image</button>
+        <button class="round-btn" data-act="copy-summary" aria-label="Copy attendance as text">${I.copy}</button>
+      </div></div>
   </section>
 
   <section class="m-card-plain">
@@ -1146,7 +1146,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 44;
+const APP_VERSION = 45;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1901,6 +1901,7 @@ document.addEventListener('click', e => { const p = e.target.closest('.when-pill
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.det === 'when') onDetail(t);
+  if (t.dataset.draft === 'when' && U.draft) { U.draft.when = t.value; const tx = t.parentNode.querySelector('.when-txt'); if (tx) tx.textContent = whenPill(t.value); }
   if (t.dataset.ctrl && U.draft) { U.draft.controls[t.dataset.ctrl] = t.checked; renderMain(); }
   if (t.dataset.setting === 'poll') { S.settings.poll = +t.value; save(); scheduleSync(); }
   if (t.dataset.setting === 'keepAwake') { S.settings.keepAwake = t.checked; save(); manageWake(); }
