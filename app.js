@@ -1086,7 +1086,7 @@ function dirList() {
     const ro = S.units.find(u => u.isRO); if (!ro) return `<div class="empty">No Regional Office in the directory.</div>`;
     const staff = ro.staff.filter(p => !q || (p.name + ' ' + p.designation + ' ' + p.dept + ' ' + p.empId).toLowerCase().includes(q));
     staff.sort((x, y) => pretty(x.name).localeCompare(pretty(y.name), 'en', { sensitivity: 'base' }));
-    return staff.map(p => personRow(p)).join('') || `<div class="empty">No RO staff match “${esc(U.dirQ)}”.</div>`;
+    return staff.map(p => staffRow(p, ro)).join('') || `<div class="empty">No RO staff match “${esc(U.dirQ)}”.</div>`;
   }
   const units = S.units.filter(u => !u.isRO);
   if (q) {
@@ -1146,7 +1146,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 46;
+const APP_VERSION = 47;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1997,6 +1997,7 @@ async function manageWake() {
   } catch (e) { U.wake = null; }
 }
 function startCall(el) {
+  if (unitByCode.get(+el.dataset.code)?.isRO) return;   // calls to RO colleagues aren't part of the calling round
   S.pendingCall = { code: +el.dataset.code, who: el.dataset.who || '', num: el.dataset.num || '', at: now() };
   save(); U.leftForCall = false;
   if ($('#layer .sheet')) closeSheet(true);
