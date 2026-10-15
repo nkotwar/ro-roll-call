@@ -1117,7 +1117,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 35;
+const APP_VERSION = 36;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1475,11 +1475,46 @@ function openAttach() {
   openSheet(`
     <div class="sheet-head"><div class="grow"><h3>Track an existing meeting</h3><div class="sub">For a Meet link you created in Calendar or the Meet app</div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
     <form class="sheet-body" id="att-form">
-      <div class="field"><label for="a-link">Meet link or code</label><input class="input mono" id="a-link" placeholder="meet.google.com/abc-mnop-xyz" required autocapitalize="off" spellcheck="false"></div>
+      <div class="field"><label for="a-link">Meet link or code</label>
+        <div class="paste-wrap"><input class="input mono" id="a-link" placeholder="meet.google.com/abc-mnop-xyz" required autocapitalize="off" spellcheck="false" value="${esc(S.lastMeet ? S.lastMeet.code : '')}"><button type="button" class="paste-btn" id="a-paste">${I.copy}<span>Paste</span></button></div>
+        <button type="button" class="paste-found" id="a-found" hidden></button>
+        <span class="hint" id="a-hint">${S.lastMeet ? `${S.lastMeet.how === 'created' ? 'Created' : S.lastMeet.how === 'pasted' ? 'Pasted' : 'Used'} ${ago(S.lastMeet.at)}` : 'Paste a link from WhatsApp or Calendar. Hazri picks out the code.'}</span></div>
       <div class="field"><label for="a-agenda">Agenda <span class="faint">(optional)</span></label><input class="input" id="a-agenda"></div>
       <div class="banner info">${I.info}<div>You need to be the meeting's owner, or have created it from the same Google account, for Google to share who joined.</div></div>
       <button class="btn btn-primary btn-block" type="submit" id="att-go">${I.link}Start tracking</button>
     </form>`);
+  const inp = $('#a-link'), pbtn = $('#a-paste'), hint = $('#a-hint');
+  let selectedOnce = false;
+  inp.addEventListener('focus', () => { if (!selectedOnce && inp.value) { selectedOnce = true; setTimeout(() => inp.select(), 0); } });
+  const takeCode = (text, how) => {
+    const code = parseCode(text); if (!code) return false;
+    inp.value = code; S.lastMeet = { code, at: now(), how }; save();
+    hint.textContent = (how === 'pasted' ? 'Pasted ' : 'Used ') + ago(S.lastMeet.at);
+    $('#a-found').hidden = true;
+    return true;
+  };
+  // Typing or long-press pasting a whole invite still works: the code is picked out of it.
+  inp.addEventListener('paste', e => { const t = (e.clipboardData || window.clipboardData)?.getData('text'); if (t && takeCode(t, 'pasted')) e.preventDefault(); });
+  pbtn.onclick = async () => {
+    try {
+      const t = await navigator.clipboard.readText();
+      if (!takeCode(t, 'pasted')) toast('No Meet link in what you copied.');
+    } catch (err) { toast('Paste was not allowed. Long-press the box and choose Paste instead.'); }
+  };
+  // If clipboard access was allowed before, check quietly for a Meet link and offer it.
+  (async () => {
+    try {
+      if (!navigator.permissions || !navigator.clipboard || !navigator.clipboard.readText) return;
+      const st = await navigator.permissions.query({ name: 'clipboard-read' });
+      if (st.state !== 'granted') return;
+      const code = parseCode(await navigator.clipboard.readText());
+      if (code && code !== parseCode(inp.value)) {
+        const f = $('#a-found'); if (!f) return;
+        f.innerHTML = `${I.copy}<span>Use the link you copied</span><b class="mono">${esc(code)}</b>`; f.hidden = false;
+        f.onclick = () => takeCode(code, 'pasted');
+      }
+    } catch (err) {}
+  })();
   $('#att-form').addEventListener('submit', async e => {
     e.preventDefault();
     const code = parseCode($('#a-link').value);
@@ -1487,6 +1522,7 @@ function openAttach() {
     const btn = $('#att-go'); btn.disabled = true; btn.textContent = 'Connecting…';
     try {
       const space = await G.call('spaces/' + code, { interactive: true });
+      if (!S.lastMeet || S.lastMeet.code !== (space.meetingCode || code)) S.lastMeet = { code: space.meetingCode || code, at: now(), how: 'entered' };
       S.session = newSession({ source: 'google', attached: true, spaceName: space.name, meetingUri: space.meetingUri, meetingCode: space.meetingCode || code, details: { when: '', agenda: $('#a-agenda').value.trim(), headedBy: '' } });
       save(); closeSheet(); U.boardTab = 'miss'; setTab('meet'); syncNow();
     } catch (err) {
@@ -1513,6 +1549,7 @@ async function doCreate() {
     S.settings.controls = { ...d.controls };
     const { space, note } = await googleCreate(d.controls);
     S.session = newSession({ source: 'google', spaceName: space.name, meetingUri: space.meetingUri, meetingCode: space.meetingCode, details, expected: d.expected, controlsNote: note });
+    S.lastMeet = { code: space.meetingCode, at: now(), how: 'created' };
     save(); U.draft = null; U.shareText = null; U.boardTab = 'miss';
     go({ name: 'share' });
     scheduleSync(8000);
