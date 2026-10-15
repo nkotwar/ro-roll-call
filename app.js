@@ -915,7 +915,7 @@ function shareText(s) {
 }
 function viewShare() {
   const s = S.session;
-  renderTop('Meeting', { back: true });
+  renderTop('VC Desk', { back: true });
   if (!s) return '';
   const d = s.details, msg = shareText(s), b = board();
   return `
@@ -1012,7 +1012,7 @@ function ptrHint() {
 function viewBoard() {
   const s = S.session, b = board();
   ptrHint();
-  renderTop(s.source === 'demo' ? 'Demo meeting' : 'Live board', { actions: `${s.source === 'demo' ? '' : `<a class="join-btn" href="${esc(s.meetingUri)}" target="_blank" rel="noopener" aria-label="Join the meeting yourself">${I.video}Join</a>`}<button class="icon-btn" data-act="go-share" aria-label="Share meeting">${I.share}</button><button class="icon-btn end-btn" data-act="end-ask" aria-label="End session">${I.stop}</button>` });
+  renderTop(s.source === 'demo' ? 'Demo meeting' : 'Live board', { actions: `${s.source === 'demo' ? '' : `<a class="join-btn" href="${esc(s.meetingUri)}" target="_blank" rel="noopener" aria-label="Join the meeting yourself">${I.video}Join</a>`}<button class="icon-btn" data-act="go-share" aria-label="VC Desk">${I.sliders}</button><button class="icon-btn end-btn" data-act="end-ask" aria-label="End session">${I.stop}</button>` });
   const d = s.details;
   const tabs = [['miss', 'Not joined', b.missCount], ['left', 'Joined & left', b.rows.left.length], ['in', 'In meeting', b.rows.in.length], ['people', 'People', b.people.length]];
   let list = '';
@@ -1146,7 +1146,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 45;
+const APP_VERSION = 46;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
