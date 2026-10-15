@@ -917,18 +917,20 @@ function viewShare() {
   const s = S.session;
   renderTop('Meeting', { back: true });
   if (!s) return '';
-  if (U.shareText == null) { U.shareText = shareText(s); U.shareEdited = false; }
-  const d = s.details;
+  const d = s.details, msg = shareText(s);
   return `
   <div class="sec-label">Invite</div>
   <section class="card pad" style="display:flex;flex-direction:column;gap:12px">
     <div class="row"><span class="mono muted">${esc(s.meetingCode)}</span></div>
     ${s.controlsNote ? `<div class="banner warn">${I.alert}<div>${esc(s.controlsNote)}</div></div>` : ''}
-    <div class="field"><label for="share-text">Message</label><textarea class="input" id="share-text" rows="6" data-share>${esc(U.shareText)}</textarea>
-      <span class="hint" id="share-hint">${U.shareEdited ? `Edited by you. <button class="btn-link" data-act="regen-share">Update from details</button>` : 'Updates with the details below. Edit anything before sending.'}</span></div>
+    <div class="field"><label for="m-when">Time of VC</label><input class="input" type="datetime-local" id="m-when" data-det="when" value="${esc(d.when ? toLocalInput(new Date(d.when)) : '')}"></div>
+    <div class="field"><label for="m-agenda">Agenda</label><textarea class="input" id="m-agenda" rows="2" data-det="agenda" placeholder="e.g. Q2 RAC review and NPA recovery targets">${esc(d.agenda)}</textarea></div>
+    <div class="field"><label for="m-head">Headed by</label><input class="input" id="m-head" data-det="headedBy" value="${esc(d.headedBy)}" placeholder="Name and designation">
+      <div class="picks" id="m-head-picks">${headPicks().map(h => `<button type="button" class="pick" aria-pressed="${h === d.headedBy}" data-act="det-pick" data-v="${esc(h)}">${esc(h)}</button>`).join('')}</div></div>
+    <span class="hint">The invite is written from these details, with the Meet link.</span>
     <div class="share-grid">
       <button class="btn btn-primary" data-act="share-native">${I.share}Share…</button>
-      <a class="btn btn-soft" id="wa-link" href="https://wa.me/?text=${encodeURIComponent(U.shareText)}" target="_blank" rel="noopener">${I.chat}WhatsApp</a>
+      <a class="btn btn-soft" id="wa-link" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">${I.chat}WhatsApp</a>
       <button class="btn btn-ghost" data-act="copy-share">${I.copy}Copy</button>
       <a class="btn btn-ghost" href="${esc(s.meetingUri)}" target="_blank" rel="noopener">${I.video}Join</a>
     </div>
@@ -938,13 +940,6 @@ function viewShare() {
   <section class="card pad share-grid">
     <button class="btn btn-soft" data-act="attendance-image">${I.share}Share image</button>
     <button class="btn btn-ghost" data-act="copy-summary">${I.copy}Copy as text</button>
-  </section>
-
-  <div class="sec-label">Details</div>
-  <section class="card pad" style="display:flex;flex-direction:column;gap:12px">
-    <div class="field"><label for="m-when">Time of VC</label><input class="input" type="datetime-local" id="m-when" data-det="when" value="${esc(d.when ? toLocalInput(new Date(d.when)) : '')}"></div>
-    <div class="field"><label for="m-agenda">Agenda</label><textarea class="input" id="m-agenda" rows="2" data-det="agenda">${esc(d.agenda)}</textarea></div>
-    <div class="field"><label for="m-head">Headed by</label><input class="input" id="m-head" data-det="headedBy" value="${esc(d.headedBy)}" placeholder="Name and designation"></div>
   </section>
 
   <div class="sec-label">Who should attend</div>
@@ -958,11 +953,8 @@ function onDetail(t) {
   s.details[k] = k === 'when' ? (t.value ? new Date(t.value).toISOString() : '') : t.value.trim();
   if (k === 'agenda' && s.details.agenda) S.recentAgendas = [s.details.agenda, ...(S.recentAgendas || []).filter(a => a !== s.details.agenda)].slice(0, 8);
   save();
-  if (!U.shareEdited) {
-    U.shareText = shareText(s);
-    const ta = $('#share-text'); if (ta) ta.value = U.shareText;
-    const wa = $('#wa-link'); if (wa) wa.href = 'https://wa.me/?text=' + encodeURIComponent(U.shareText);
-  } else { const h = $('#share-hint'); if (h) h.innerHTML = `Edited by you. <button class="btn-link" data-act="regen-share">Update from details</button>`; }
+  const wa = $('#wa-link'); if (wa) wa.href = 'https://wa.me/?text=' + encodeURIComponent(shareText(s));
+  if (k === 'headedBy') $$('#m-head-picks .pick').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === s.details.headedBy));
 }
 
 /* ───────────────────────── views: live board ───────────────────────── */
@@ -1151,7 +1143,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 40;
+const APP_VERSION = 41;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1819,8 +1811,9 @@ const ACT = {
   'draft-pick': el => { U.draft[el.dataset.k] = el.dataset.v; renderMain(); },
   'pick-expected': () => openExpected(),
   create: () => doCreate(),
-  'share-native': () => { const t = U.shareText; if (navigator.share) navigator.share({ text: t }).catch(() => {}); else copyText(t, 'Message copied. Paste it in any app.'); },
-  'copy-share': () => copyText(U.shareText, 'Message copied'),
+  'share-native': () => { const t = shareText(S.session); if (navigator.share) navigator.share({ text: t }).catch(() => {}); else copyText(t, 'Message copied. Paste it in any app.'); },
+  'copy-share': () => copyText(shareText(S.session), 'Message copied'),
+  'det-pick': el => { const inp = $('#m-head'); if (!inp) return; inp.value = el.dataset.v; onDetail(inp); },
   'to-board': () => { leaveRoute(); U.tab = 'meet'; render(); window.scrollTo(0, 0); },
   'go-share': () => { U.shareText = null; go({ name: 'share' }); },
   'board-tab': el => { U.boardTab = el.dataset.k; renderMain(); },
@@ -1853,7 +1846,6 @@ const ACT = {
   'reset-calls': async () => { if (await confirmSheet('Start a new calling round?', 'All call statuses (informed, recall later, no answer, denied) are cleared so you can start fresh before the next VC.', 'Clear statuses', true)) { S.calls = {}; S.pendingCall = null; save(); renderMain(); toast('Call statuses cleared'); } },
   copy: el => copyText(el.dataset.v, 'Number copied'),
   'end-ask': () => openEndSheet(),
-  'regen-share': () => { U.shareEdited = false; U.shareText = shareText(S.session); renderMain(); },
   'edit-expected': () => { closeSheet(true); U.draft = { expected: S.session.expected.slice() }; U.sessionDraft = U.draft; openExpected(); },
   'import-staff': () => pickImport('staff'),
   'arc-tap': () => arcTap(),
@@ -1898,7 +1890,6 @@ $$('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab))
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.draft && U.draft) U.draft[t.dataset.draft] = t.value;
-  if (t.id === 'share-text') { U.shareText = t.value; U.shareEdited = true; const wa = $('#wa-link'); if (wa) wa.href = 'https://wa.me/?text=' + encodeURIComponent(t.value); const h = $('#share-hint'); if (h && !h.querySelector('button')) h.innerHTML = `Edited by you. <button class="btn-link" data-act="regen-share">Update from details</button>`; }
   if (t.dataset.det && t.dataset.det !== 'when') onDetail(t);
   if (t.id === 'dir-q') { U.dirQ = t.value; $('#dir-list').innerHTML = dirList(); }
   if (t.dataset.setting === 'clientId') { S.settings.clientId = cleanClientId(t.value) || t.value.trim(); save(); const b = $('[data-act="signin"]'); if (b) b.disabled = !S.settings.clientId; }
