@@ -521,7 +521,7 @@ function scheduleSync(delay) {
   clearTimeout(syncTimer);
   const s = S.session;
   if (!s || s.ended) return;
-  const d = delay != null ? delay : (s.source === 'demo' ? 4000 : s.state === 'empty' ? Math.max(EMPTY_POLL_MS, S.settings.poll * 1000) : Math.max(10, S.settings.poll) * 1000);
+  const d = delay != null ? delay : pollMs(s);
   syncTimer = setTimeout(syncNow, d);
 }
 async function syncNow() {
@@ -552,7 +552,7 @@ async function syncNow() {
 }
 
 /* ───────────────────────── UI state ───────────────────────── */
-const U = { tab: (() => { try { const t = sessionStorage.getItem('rc.tab'); sessionStorage.removeItem('rc.tab'); return t === 'settings' ? t : 'meet'; } catch (e) { return 'meet'; } })(), route: null, boardTab: 'miss', dirQ: '', dirFilter: 'branches', flash: new Set(), draft: null, wake: null };
+const U = { visibleAt: Date.now(), tab: (() => { try { const t = sessionStorage.getItem('rc.tab'); sessionStorage.removeItem('rc.tab'); return t === 'settings' ? t : 'meet'; } catch (e) { return 'meet'; } })(), route: null, boardTab: 'miss', dirQ: '', dirFilter: 'branches', flash: new Set(), draft: null, wake: null };
 
 let navDepth = 0, ignorePop = 0, exiting = false, sheetNav = false, pendingSheetPop = false;
 function navPush() { try { history.pushState({ rc: 'nav' }, ''); navDepth++; } catch (e) {} }
@@ -689,6 +689,7 @@ const ECG_SPEED = 110, ECG_QRS = 64, ECG_SCALE = 11;
 const gauss = (t, c, w) => Math.exp(-((t - c) ** 2) / (2 * w * w));
 const ecgShape = t => .16 * gauss(t, .12, .045) - .14 * gauss(t, .40, .018) + gauss(t, .46, .022) - .32 * gauss(t, .53, .02) + .26 * gauss(t, .80, .07);
 function ecgNormal() {
+  if (ECG.mode === 'stale') { ECG.gap = 200; return { len: ECG_QRS, fn: () => 0, red: 0 }; }   // lost signal: flat
   const live = ECG.mode === 'live', r = (a, b) => a + Math.random() * (b - a);
   const avg = live ? Math.max(.6, 1.7 - ECG.n * .042) : 2.6;
   const period = avg * (live ? r(.65, 1.35) : r(.6, 1.4));
@@ -742,7 +743,8 @@ function ecgDraw() {
   c.globalAlpha = 1;
   if (!ECG.reduce) {
     const hy = base - (buf[ECG.head] || 0) * ECG_SCALE;
-    c.shadowColor = '#D20838'; c.shadowBlur = 8; c.fillStyle = '#D20838';
+    const hc = ECG.mode === 'stale' ? '#8A97A8' : '#D20838';
+    c.shadowColor = hc; c.shadowBlur = 8; c.fillStyle = hc;
     c.beginPath(); c.arc(ECG.head, hy, 2.4, 0, 7); c.fill(); c.shadowBlur = 0;
   }
 }
@@ -756,13 +758,13 @@ function ecgLoop(ts) {
 function ecgSync() {
   const s = S.session;
   const n = s ? Object.values(s.parts).filter(p => p.active).length : 0;
-  const mode = !s || s.ended ? 'off' : n > 0 ? 'live' : 'faint';
+  const mode = !s || s.ended ? 'off' : isStale(s) ? 'stale' : n > 0 ? 'live' : 'faint';
   ECG.mode = mode; ECG.n = n;
   document.documentElement.classList.toggle('ecg-on', mode !== 'off');
   if (mode === 'off') { if (ECG.cv) ECG.cv.remove(); cancelAnimationFrame(ECG.raf); ECG.raf = 0; ECG.queue = []; return; }
   if (!ECG.cv) { ECG.cv = document.createElement('canvas'); ECG.cv.className = 'ecg'; ECG.cv.setAttribute('aria-hidden', 'true'); ECG.ctx = ECG.cv.getContext('2d'); }
   const top = $('#top'); if (ECG.cv.parentNode !== top) top.appendChild(ECG.cv);
-  ECG.col = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#146CC0';
+  ECG.col = mode === 'stale' ? '#8A97A8' : getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#146CC0';
   ECG.reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   ecgResize();
   if (ECG.reduce) {   // a still heartbeat shape, no sweep
@@ -773,7 +775,7 @@ function ecgSync() {
   if (!ECG.raf && !document.hidden) { ECG.last = 0; ECG.raf = requestAnimationFrame(ecgLoop); }
 }
 function ecgEvents(joined, left) {
-  if (ECG.mode === 'off' || ECG.reduce) return;
+  if (ECG.mode === 'off' || ECG.mode === 'stale' || ECG.reduce) return;
   const j = Math.min(joined, 3);
   for (let i = 0; i < j; i++) {
     const A = i === 2 && joined > 3 ? 1.75 : 1.4 * (.95 + Math.random() * .1);
@@ -875,13 +877,21 @@ function vcRun(t) {
   const fmt = a => a < 60 ? `${a} min` : `${Math.floor(a / 60)} h ${String(a % 60).padStart(2, '0')} min`;
   return d < 0 ? `${fmt(Math.max(1, Math.ceil(-d)))} to go` : d < 1 ? 'Started' : fmt(Math.floor(d));
 }
+// The status row is gone: the header heartbeat shows live / empty / ended. Only problems are shown here.
+function pollMs(s) { return s.source === 'demo' ? 4000 : s.state === 'empty' ? Math.max(EMPTY_POLL_MS, S.settings.poll * 1000) : Math.max(10, S.settings.poll) * 1000; }
+function isStale(s) {
+  if (!s || s.ended || document.hidden) return false;
+  if (now() - (U.visibleAt || 0) < 12000) return false;          // just reopened: give the first check a moment
+  const since = s.lastSync || s.createdAt;
+  return now() - since > 3 * pollMs(s) + 5000;
+}
 function syncLine(s) {
-  if (s.error) {
+  if (s.error && s.error.code !== 'net') {
     const re = s.error.code === 'reauth' || s.error.code === 'noclient';
     return `<div class="banner ${re ? 'warn' : 'err'}">${I.alert}<div class="grow">${esc(s.error.msg)}${re ? `<div style="margin-top:8px"><button class="btn btn-ghost" data-act="reconnect" style="min-height:38px;padding:8px 12px">${I.refresh}Reconnect</button></div>` : ''}</div></div>`;
   }
-  const label = s.ended ? `<span class="chip">Meeting ended</span>` : s.state === 'empty' ? `<span class="chip"><span class="dot"></span>Empty</span>` : s.state === 'waiting' ? `<span class="chip acc"><span class="dot pulse"></span>Waiting for the first person</span>` : `<span class="chip in"><span class="dot pulse"></span>Live</span>`;
-  return `<div class="syncbar">${label}<span>Updated <span data-ago="${s.lastSync || ''}">${ago(s.lastSync)}</span></span><span class="grow"></span><button class="icon-btn" data-act="sync" aria-label="Refresh now" style="width:34px;height:34px">${I.refresh}</button></div>`;
+  if (isStale(s)) return `<div class="stale-line">${I.alert}<span>Last update <span data-ago="${s.lastSync || s.createdAt}">${ago(s.lastSync || s.createdAt)}</span> · pull down to retry</span></div>`;
+  return '';
 }
 function personChips(list, onlyActive) {
   return list.filter(x => !onlyActive || x.p.active).map(x => {
@@ -891,8 +901,22 @@ function personChips(list, onlyActive) {
 }
 function bmOf(u) { return u.staff.find(p => p.bm) || u.staff[0]; }
 function callNumber(u) { return u.mobile || u.phone || (bmOf(u) && bmOf(u).phone) || ''; }
+function ptrHint() {
+  const h = S.ptrHint || (S.ptrHint = { shown: 0, used: false });
+  if (h.used || h.shown >= 3 || U.hintFor === S.session.id) return;
+  U.hintFor = S.session.id; h.shown++; save();
+  setTimeout(() => {
+    if (U.tab !== 'meet' || U.route) return;
+    const el = document.createElement('div'); el.className = 'ptr-hint'; el.innerHTML = `${I.down}Pull down to refresh`;
+    el.style.top = ($('#top').getBoundingClientRect().bottom + 10) + 'px';
+    document.body.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('show'));
+    setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 400); }, 3800);
+  }, 700);
+}
 function viewBoard() {
   const s = S.session, b = board();
+  ptrHint();
   renderTop(s.source === 'demo' ? 'Demo meeting' : 'Live board', { actions: `${s.source === 'demo' ? '' : `<a class="join-btn" href="${esc(s.meetingUri)}" target="_blank" rel="noopener" aria-label="Join the meeting yourself">${I.video}Join</a>`}<button class="icon-btn" data-act="go-share" aria-label="Share meeting">${I.share}</button><button class="icon-btn" data-act="session-menu" aria-label="Meeting options">${I.more}</button>` });
   const d = s.details;
   const tabs = [['miss', 'Not joined', b.missCount], ['left', 'Joined & left', b.rows.left.length], ['in', 'In meeting', b.rows.in.length], ['people', 'People', b.people.length]];
@@ -929,7 +953,7 @@ function viewBoard() {
   return `
   <section class="card meet-head">
     <div class="meet-meta">
-      <div class="row meet-line"><span class="mono muted" style="font-size:13px;flex:none">${esc(s.meetingCode)}</span>${d.when ? `<span class="faint" style="flex:none">·</span><span class="sub ellipsis">${esc((new Date(d.when).toDateString() === new Date().toDateString() ? '' : new Date(d.when).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ', ') + fmtClock(d.when))}</span>` : ''}${d.when && !s.ended ? `<span class="vc-run">${I.clock}<span data-since="${Date.parse(d.when)}">${vcRun(Date.parse(d.when))}</span></span>` : ''}</div>
+      <div class="row meet-line"><span class="mono muted" style="font-size:13px;flex:none">${esc(s.meetingCode)}</span>${d.when ? `<span class="faint" style="flex:none">·</span><span class="sub ellipsis">${esc((new Date(d.when).toDateString() === new Date().toDateString() ? '' : new Date(d.when).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ', ') + fmtClock(d.when))}</span>` : ''}${s.ended ? `<span class="vc-run">${I.stop}<span>Ended</span></span>` : d.when ? `<span class="vc-run">${I.clock}<span data-since="${Date.parse(d.when)}">${vcRun(Date.parse(d.when))}</span></span>` : ''}</div>
       ${d.agenda ? `<div class="agenda">${esc(d.agenda)}</div>` : ''}
       ${d.headedBy ? `<div class="sub">Headed by ${esc(d.headedBy)}</div>` : ''}
     </div>
@@ -1027,7 +1051,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 33;
+const APP_VERSION = 34;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1834,6 +1858,7 @@ function swipeTabs(dir) {
     el.style.transition = 'transform .2s ease'; place(ARM, 0); el.classList.add('spin');
     const t0 = Date.now();
     try { await syncNow(); } catch (err) {}
+    if (S.session && !S.session.error) { S.ptrHint = { ...(S.ptrHint || {}), used: true }; save(); }
     while (syncing) await new Promise(r => setTimeout(r, 100));
     await new Promise(r => setTimeout(r, Math.max(0, 650 - (Date.now() - t0))));
     busy = false; reset();
@@ -1864,11 +1889,17 @@ function startCall(el) {
   setTimeout(() => { if (S.pendingCall && !U.leftForCall && !document.hidden) openCallFeedback(); }, 4000);
 }
 document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) U.visibleAt = Date.now();
   manageWake(); ecgSync();
   if (document.hidden) { if (S.pendingCall) U.leftForCall = true; return; }
   if (S.pendingCall && U.leftForCall) { U.leftForCall = false; setTimeout(openCallFeedback, 350); }
   if (S.session && !S.session.ended) syncNow();
 });
+let lastStale = false;
+setInterval(() => {
+  const st = isStale(S.session);
+  if (st !== lastStale) { lastStale = st; ecgSync(); if (U.tab === 'meet' && !U.route && S.session) renderMain(); }
+}, 3000);
 setInterval(() => { $$('[data-ago]').forEach(el => { el.textContent = ago(+el.dataset.ago || 0); }); $$('[data-since]').forEach(el => { el.textContent = vcRun(+el.dataset.since); }); }, 5000);
 
 /* ───────────────────────── boot ───────────────────────── */
