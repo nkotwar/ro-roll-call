@@ -965,7 +965,7 @@ function ring(joined, total) {
 // Minutes since the scheduled Time of VC (not since the Meet link opened).
 function vcRun(t) {
   const d = (Date.now() - t) / 60000;
-  const fmt = a => a < 60 ? `${a} min` : `${Math.floor(a / 60)} h ${String(a % 60).padStart(2, '0')} min`;
+  const fmt = a => a < 60 ? `${a} min` : `${Math.floor(a / 60)}h ${String(a % 60).padStart(2, '0')}m`;
   return d < 0 ? `${fmt(Math.max(1, Math.ceil(-d)))} to go` : d < 1 ? 'Started' : fmt(Math.floor(d));
 }
 // The status row is gone: the header heartbeat shows live / empty / ended. Only problems are shown here.
@@ -1045,7 +1045,7 @@ function viewBoard() {
   return `
   <section class="card meet-head">
     <div class="meet-meta">
-      <div class="row meet-line"><span class="mono muted" style="font-size:13px;flex:none">${esc(s.meetingCode)}</span>${d.when ? `<span class="faint" style="flex:none">·</span><span class="sub ellipsis">${esc((new Date(d.when).toDateString() === new Date().toDateString() ? '' : new Date(d.when).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ', ') + fmtClock(d.when))}</span>` : ''}${s.ended ? `<span class="vc-run">${I.stop}<span>Ended</span></span>` : d.when ? `<span class="vc-run">${I.clock}<span data-since="${Date.parse(d.when)}">${vcRun(Date.parse(d.when))}</span></span>` : ''}</div>
+      <div class="row meet-line"><span class="mono muted" style="font-size:12px;flex:none">${esc(s.meetingCode)}</span>${d.when ? `<span class="sub ellipsis">${esc(new Date(d.when).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ', ' + fmtClock(d.when))}</span>` : ''}${s.ended ? `<span class="vc-run">${I.stop}<span>Ended</span></span>` : d.when ? `<span class="vc-run">${I.clock}<span data-since="${Date.parse(d.when)}">${vcRun(Date.parse(d.when))}</span></span>` : ''}</div>
       ${d.agenda ? `<div class="agenda">${esc(d.agenda)}</div>` : ''}
       ${d.headedBy ? `<div class="sub">Headed by ${esc(d.headedBy)}</div>` : ''}
     </div>
@@ -1143,7 +1143,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 41;
+const APP_VERSION = 42;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
