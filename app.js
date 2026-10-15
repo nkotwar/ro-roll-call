@@ -928,9 +928,9 @@ function viewShare() {
   </section>
 
   <section class="card pad m-card">
-    <div class="m-head"><div class="grow"><div class="m-title">Invite</div><div class="sub mono">${esc(s.meetingCode)}</div></div></div>
+    <div class="m-head"><div class="grow"><div class="m-title">Invite</div><div class="sub mono">${esc(s.meetingCode)}</div></div>
+      <label class="when-pill" title="Time of VC">${I.clock}<span id="m-when-txt">${esc(whenPill(d.when))}</span><input type="datetime-local" id="m-when" data-det="when" aria-label="Time of VC" value="${esc(d.when ? toLocalInput(new Date(d.when)) : '')}"></label></div>
     ${s.controlsNote ? `<div class="banner warn">${I.alert}<div>${esc(s.controlsNote)}</div></div>` : ''}
-    <div class="field"><label for="m-when">Time of VC</label><input class="input" type="datetime-local" id="m-when" data-det="when" value="${esc(d.when ? toLocalInput(new Date(d.when)) : '')}"></div>
     <div class="field"><label for="m-agenda">Agenda</label><textarea class="input" id="m-agenda" rows="2" data-det="agenda" placeholder="e.g. Q2 RAC review and NPA recovery targets">${esc(d.agenda)}</textarea></div>
     <div class="field"><label for="m-head">Headed by</label><input class="input" id="m-head" data-det="headedBy" value="${esc(d.headedBy)}" placeholder="Name and designation">
       <div class="picks" id="m-head-picks">${headPicks().map(h => `<button type="button" class="pick" aria-pressed="${h === d.headedBy}" data-act="det-pick" data-v="${esc(h)}">${esc(h)}</button>`).join('')}</div></div>
@@ -948,6 +948,7 @@ function viewShare() {
 
   <button class="link-btn" data-act="to-board">Go to live board ${I.chev}</button>`;
 }
+const whenPill = w => w ? new Date(w).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ', ' + fmtClock(w) : 'Set time';
 function onDetail(t) {
   const s = S.session; if (!s) return;
   const k = t.dataset.det;
@@ -955,6 +956,7 @@ function onDetail(t) {
   if (k === 'agenda' && s.details.agenda) S.recentAgendas = [s.details.agenda, ...(S.recentAgendas || []).filter(a => a !== s.details.agenda)].slice(0, 8);
   save();
   const wa = $('#wa-link'); if (wa) wa.href = 'https://wa.me/?text=' + encodeURIComponent(shareText(s));
+  if (k === 'when') { const tx = $('#m-when-txt'); if (tx) tx.textContent = whenPill(s.details.when); }
   if (k === 'headedBy') $$('#m-head-picks .pick').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === s.details.headedBy));
 }
 
@@ -1144,7 +1146,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 43;
+const APP_VERSION = 44;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1895,6 +1897,7 @@ document.addEventListener('input', e => {
   if (t.id === 'dir-q') { U.dirQ = t.value; $('#dir-list').innerHTML = dirList(); }
   if (t.dataset.setting === 'clientId') { S.settings.clientId = cleanClientId(t.value) || t.value.trim(); save(); const b = $('[data-act="signin"]'); if (b) b.disabled = !S.settings.clientId; }
 });
+document.addEventListener('click', e => { const p = e.target.closest('.when-pill'); if (!p) return; const i = $('input', p); try { i.showPicker && i.showPicker(); } catch (err) {} });
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.det === 'when') onDetail(t);
