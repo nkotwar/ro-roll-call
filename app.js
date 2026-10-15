@@ -618,7 +618,7 @@ function viewHome() {
         <button class="btn btn-ghost btn-block" data-act="open-create" data-demo="1">${I.play}Try a demo meeting</button>
       </div>
     </section>
-    ${callBoard()}
+    <div class="home-art"><svg viewBox="0 0 320 200" class="home-arc" aria-hidden="true"><circle cx="30.9" cy="144.3" r="9" class="ha-f"/><circle cx="38.4" cy="113.9" r="9" class="ha-o"/><circle cx="53.0" cy="86.2" r="9" class="ha-f"/><circle cx="73.8" cy="62.7" r="9" class="ha-f"/><circle cx="99.6" cy="44.9" r="9" class="ha-f"/><circle cx="128.9" cy="33.8" r="9" class="ha-f"/><circle cx="160.0" cy="30.0" r="9" class="ha-l"/><circle cx="191.1" cy="33.8" r="9" class="ha-f"/><circle cx="220.4" cy="44.9" r="9" class="ha-o"/><circle cx="246.2" cy="62.7" r="9" class="ha-f"/><circle cx="267.0" cy="86.2" r="9" class="ha-f"/><circle cx="281.6" cy="113.9" r="9" class="ha-f"/><circle cx="289.1" cy="144.3" r="9" class="ha-o"/><circle cx="61.2" cy="144.4" r="8.5" class="ha-f"/><circle cx="70.9" cy="114.6" r="8.5" class="ha-f"/><circle cx="89.3" cy="89.3" r="8.5" class="ha-f"/><circle cx="114.6" cy="70.9" r="8.5" class="ha-f"/><circle cx="144.4" cy="61.2" r="8.5" class="ha-l"/><circle cx="175.6" cy="61.2" r="8.5" class="ha-f"/><circle cx="205.4" cy="70.9" r="8.5" class="ha-o"/><circle cx="230.7" cy="89.3" r="8.5" class="ha-f"/><circle cx="249.1" cy="114.6" r="8.5" class="ha-f"/><circle cx="258.8" cy="144.4" r="8.5" class="ha-f"/><circle cx="91.8" cy="144.4" r="8" class="ha-o"/><circle cx="105.3" cy="116.4" r="8" class="ha-f"/><circle cx="129.6" cy="96.9" r="8" class="ha-f"/><circle cx="160.0" cy="90.0" r="8" class="ha-f"/><circle cx="190.4" cy="96.9" r="8" class="ha-f"/><circle cx="214.7" cy="116.4" r="8" class="ha-l"/><circle cx="228.2" cy="144.4" r="8" class="ha-f"/><circle cx="160" cy="160" r="40" class="ha-pod"/><image href="cbi-emblem.png" x="137" y="137" width="46" height="46"/></svg><div class="ha-name">Hazri</div><div class="ha-sub">VC attendance · Regional Office Udaipur</div></div>
     ${ready ? '' : `<div class="banner info">${I.info}<div><b>Google is not connected yet.</b> Demo meetings work now. To create real meetings, add your Client ID in <button class="btn-link" data-act="tab" data-tab="settings" style="border:0;background:none;padding:0;color:var(--accent);font-weight:600">Settings</button>.</div></div>`}`;
 }
 
@@ -810,23 +810,6 @@ function dirList() {
   }
   return callSummary(units) + units.slice().sort((a, b) => a.name.localeCompare(b.name)).map(unitRow).join('');
 }
-/* Home: calling-round board. One tile per expected branch, coloured by call status. */
-const TILE = { informed: 's-in', recall: 's-left', denied: 's-miss', noanswer: 's-na', called: 's-called' };
-function callBoard() {
-  const units = S.units.filter(u => !u.isRO && u.expect).sort((a, b) => a.name.localeCompare(b.name));
-  if (!units.length) return '';
-  const n = { informed: 0, recall: 0, noanswer: 0, denied: 0, called: 0, none: 0 };
-  for (const u of units) { const c = callOf(u.code); n[c ? (TILE[c.status] ? c.status : 'called') : 'none']++; }
-  const N = units.length, any = n.none < N;
-  const seg = k => n[k] ? `<span class="cb-${k}" style="width:${(100 * n[k] / N).toFixed(2)}%"></span>` : '';
-  const sub = any ? `${n.informed} of ${N} informed · ${n.none} not called yet` : `No branch called yet. Tap a branch to call it.`;
-  const legend = [['informed', 'Informed'], ['recall', 'Recall later'], ['called', 'Called'], ['noanswer', 'No answer'], ['denied', 'Denied']].filter(([k]) => n[k]).map(([k, l]) => `<span class="cb-key"><i class="cb-${k}"></i>${l}</span>`).join('');
-  return `<section class="card pad cboard">
-    <div class="row"><div class="grow"><div class="title">Calling round</div><div class="sub">${sub}</div></div>${any ? `<button class="btn btn-soft" style="min-height:36px;padding:6px 12px" data-act="reset-calls">New round</button>` : ''}</div>
-    ${any ? `<div class="cb-bar">${seg('informed')}${seg('recall')}${seg('called')}${seg('noanswer')}${seg('denied')}</div>${legend ? `<div class="cb-legend">${legend}</div>` : ''}` : ''}
-    <div class="cb-grid">${units.map(u => { const c = callOf(u.code); const cls = c ? (TILE[c.status] || 's-called') : ''; return `<button class="cb-tile ${cls}" data-act="open-unit" data-code="${u.code}" aria-label="${esc(u.name)}${c ? ', ' + esc((CALL_STATUS[c.status] || CALL_STATUS.called).label) : ', not called'}"><span class="mono">${u.code}</span><span class="nm">${esc(u.name)}</span></button>`; }).join('')}</div>
-  </section>`;
-}
 function callSummary(units) {
   const n = { informed: 0, recall: 0, noanswer: 0, denied: 0, called: 0, none: 0 };
   for (const u of units) { const c = callOf(u.code); n[c ? c.status : 'none']++; }
@@ -877,7 +860,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 19;
+const APP_VERSION = 20;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;

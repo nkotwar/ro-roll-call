@@ -38,24 +38,15 @@
 
 /* Central Bank brand: blue accent, thin red line under the header. Status colours (in / left / miss) are separate. */
 .top{box-shadow:inset 0 -2px 0 #D20838}
-/* Home calling board */
-.cboard{display:flex;flex-direction:column;gap:12px}
-.cboard .title{font-weight:600}
-.cb-bar{height:8px;border-radius:4px;background:var(--surface-2);overflow:hidden;display:flex}
-.cb-bar span{display:block;height:100%}
-.cb-informed{background:var(--in)} .cb-recall{background:var(--left)} .cb-denied{background:var(--miss)} .cb-noanswer{background:var(--faint)} .cb-called{background:var(--accent)}
-.cb-legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
-.cb-key{display:inline-flex;align-items:center;gap:5px} .cb-key i{width:9px;height:9px;border-radius:50%;display:inline-block}
-.cb-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
-.cb-tile{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:7px 6px;min-width:0;text-align:left;font:inherit;color:var(--ink);cursor:pointer;display:flex;flex-direction:column;gap:1px}
-.cb-tile .mono{font-size:11px;font-weight:600;color:var(--faint)}
-.cb-tile .nm{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cb-tile:active{transform:scale(.97)}
-.cb-tile.s-in{background:var(--in-soft);border-color:transparent} .cb-tile.s-in .mono{color:var(--in)}
-.cb-tile.s-left{background:var(--left-soft);border-color:transparent} .cb-tile.s-left .mono{color:var(--left)}
-.cb-tile.s-miss{background:var(--miss-soft);border-color:transparent} .cb-tile.s-miss .mono{color:var(--miss)}
-.cb-tile.s-na{background:var(--surface-2);border-color:transparent} .cb-tile.s-na .mono{color:var(--muted)}
-.cb-tile.s-called{background:var(--accent-soft);border-color:transparent} .cb-tile.s-called .mono{color:var(--accent)}
+/* Home: Assembly Arc art under the start card */
+.home-art{text-align:center;margin-top:14px}
+.home-arc{width:100%;max-width:300px;display:block;margin:0 auto}
+.home-arc .ha-f{fill:var(--accent);fill-opacity:.22}
+.home-arc .ha-o{fill:none;stroke:var(--accent);stroke-opacity:.35;stroke-width:2}
+.home-arc .ha-l{fill:#E2A847;fill-opacity:.8}
+.home-arc .ha-pod{fill:#FFFFFF;stroke:var(--line)}
+.ha-name{font-weight:700;font-size:17px;margin-top:6px}
+.ha-sub{color:var(--muted);font-size:13px}
 .brand-mark{width:32px;height:32px;border-radius:8px;object-fit:cover;flex:none;margin-right:-2px;box-shadow:0 1px 3px rgba(0,0,0,.18)}
 .join-btn{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:0 14px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-weight:600;font-size:14px;text-decoration:none;flex:none}
 .join-btn svg{width:18px;height:18px}
