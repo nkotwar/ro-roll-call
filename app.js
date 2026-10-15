@@ -598,6 +598,7 @@ function renderMain() {
   if (r && r.name === 'create') html = viewCreate();
   else if (r && r.name === 'share') html = viewShare();
   else if (r && r.name === 'unit') html = viewUnit(r.code);
+  else if (r && r.name === 'about') html = viewAbout();
   else if (U.tab === 'meet') html = S.session ? viewBoard() : viewHome();
   else if (U.tab === 'dir') html = viewDirectory();
   else html = viewSettings();
@@ -784,6 +785,71 @@ function ecgEvents(joined, left) {
   for (let i = 0; i < Math.min(left, 2); i++) { const A = 1.35 * (.95 + Math.random() * .1); ECG.queue.push({ len: 30, red: 2, fn: t => -A * gauss(t, .45, .085) + .28 * A * gauss(t, .62, .06) }); }
 }
 addEventListener('resize', () => { if (ECG.mode !== 'off') { ecgResize(); ecgDraw(); } });
+
+/* ───────────────────────── about: a short field guide ───────────────────────── */
+function viewAbout() {
+  renderTop('About', { back: true });
+  const ecg = (path, col, extra = '') => `<svg viewBox="0 0 120 28" class="ab-ecg" aria-hidden="true"><line x1="0" y1="18" x2="120" y2="18" stroke="#D20838" stroke-opacity=".25"/>${extra}<path d="${path}" fill="none" stroke="${col}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const beat = 'M0 18H34l3-2 3 2h4l2 3 4-17 4 19 3-5h6c4 0 6-3 9-3s5 3 9 3H120';
+  const ch = (n, kicker, title, body) => `<section class="ab-ch"><div class="ab-num">${n}</div><div class="ab-body"><div class="ab-kicker">${kicker}</div><h3>${title}</h3>${body}</div></section>`;
+  return `<article class="ab">
+  <header class="ab-hero">
+    <img src="icon-192.png" alt="" class="ab-icon">
+    <h2>Hazri</h2>
+    <p class="ab-dek">A short field guide to taking attendance at a VC, branch by branch.</p>
+  </header>
+
+  ${ch('I', 'The idea', 'Every branch, accounted for', `
+    <p class="ab-lede">Hazri creates the Google Meet for your VC, shares it with the time and agenda, and then quietly watches the door. As people walk in, it tells you which branches are present, which came and went, and which you still need to call.</p>
+    <blockquote>Tag a person once, and Hazri remembers them in every meeting after.</blockquote>`)}
+
+  ${ch('II', 'A meeting, start to finish', 'Six steps', `
+    <ol class="ab-steps">
+      <li><b>Create</b><span>Time, agenda and who heads it. Hazri makes the Meet link.</span></li>
+      <li><b>Share</b><span>One tap sends the invite on WhatsApp.</span></li>
+      <li><b>Watch</b><span>Joiners appear within seconds of entering.</span></li>
+      <li><b>Tag</b><span>Match a new face to a person or branch, once.</span></li>
+      <li><b>Call</b><span>Branches not yet in are a tap away.</span></li>
+      <li><b>Report</b><span>Share an attendance image when you are done.</span></li>
+    </ol>`)}
+
+  ${ch('III', 'Who is who', 'From a name on screen to a branch', `
+    <div class="ab-chain"><span>Google account<br><small>or display name</small></span><i>→</i><span>Person<br><small>from your staff list</small></span><i>→</i><span>Branch<br><small>counted present</small></span></div>
+    <p>Google tells Hazri only the name each joiner shows. The first time someone appears, you tag them. From then on the tag follows their Google account (or name), and through their employee ID it follows them to a new branch after a transfer.</p>`)}
+
+  ${ch('IV', 'Reading the board', 'Three colours, one line', `
+    <div class="ab-legend">
+      <div><i class="ab-dot in"></i><b>In now</b><span>Someone from the branch is in the meeting.</span></div>
+      <div><i class="ab-dot left"></i><b>Joined &amp; left</b><span>They came, so they know. No need to call.</span></div>
+      <div><i class="ab-dot miss"></i><b>Not joined</b><span>Call them. The number is one tap away.</span></div>
+    </div>
+    <p>The line under the header is the meeting's pulse.</p>
+    <div class="ab-pulse">
+      <figure>${ecg(beat, 'var(--accent)')}<figcaption>A steady beat: the meeting is live. More people, a quicker rhythm.</figcaption></figure>
+      <figure>${ecg('M0 18H50l3-1 4-14 4 17 3-3h56', '#D20838')}<figcaption>A red spike: someone just joined.</figcaption></figure>
+      <figure>${ecg('M0 18H50l3 1 4 7 4-9 3 1h56', '#E8A317')}<figcaption>An amber dip: someone just left.</figcaption></figure>
+      <figure>${ecg('M0 18H30c6 0 8-2 12-2s6 2 12 2H120', 'var(--accent)')}<figcaption>A faint ripple: the room is empty, or nobody has arrived yet.</figcaption></figure>
+      <figure>${ecg('M0 18H120', '#8A97A8')}<figcaption>Grey and flat: Hazri has lost touch with Google. Pull down to retry.</figcaption></figure>
+    </div>`)}
+
+  ${ch('V', 'Before the VC', 'The calling round', `
+    <p>Open any branch in the Directory and call the manager or anyone listed. When you come back, Hazri asks how it went and marks the branch <em>Informed</em>, <em>Recall later</em>, <em>No answer</em> or <em>Denied</em>, with the time. Start a new round before each VC.</p>`)}
+
+  ${ch('VI', 'Where your data lives', 'On this phone, and nowhere else', `
+    <p>Your staff list, tags and settings are stored only on this phone. The app's code is public; your data is not part of it. Google sees the meeting itself and nothing about your staff.</p>
+    <p class="ab-note">Keep a backup from Settings now and then, especially before changing phones.</p>`)}
+
+  ${ch('VII', 'Small things', 'Worth knowing', `
+    <ul class="ab-tips">
+      <li>Pull down on the live board to refresh at once.</li>
+      <li>Swipe left or right to move between tabs.</li>
+      <li>The clock on the meeting card counts from the VC time you set.</li>
+      <li>Tap the emblem on the home screen. Then try it five times.</li>
+    </ul>`)}
+
+  <footer class="ab-foot"><img src="cbi-emblem.png" alt=""><div>Hazri · version ${APP_VERSION}<br>Built by Nitin Kotwar (139535), via PDUDAIRO</div></footer>
+  </article>`;
+}
 
 /* ───────────────────────── views: create + share ───────────────────────── */
 function draftDefault(demo) {
@@ -1051,7 +1117,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 34;
+const APP_VERSION = 35;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1083,7 +1149,7 @@ function versionCard() {
   <section class="card list"><div class="setting"><div class="grow"><div class="title">Version ${APP_VERSION}</div><div class="sub">${sub}</div></div>${btn}</div></section>`;
 }
 function viewSettings() {
-  renderTop('Settings');
+  renderTop('Settings', { actions: `<button class="icon-btn about-btn" data-act="about" aria-label="About Hazri">${I.info}</button>` });
   setTimeout(checkUpdate, 0);
   const st = S.settings, c = st.controls;
   const signed = G.valid() || st.signedIn;
@@ -1740,6 +1806,7 @@ const ACT = {
   'edit-details': () => { closeSheet(true); openDetailsEdit(); },
   'import-staff': () => pickImport('staff'),
   'arc-tap': () => arcTap(),
+  about: () => go({ name: 'about' }),
   'check-update': () => checkUpdate(true),
   'apply-update': () => applyUpdate(),
   'attendance-image': () => { closeSheet(true); openAttendanceImage(); },
