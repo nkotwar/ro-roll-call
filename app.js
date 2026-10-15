@@ -618,8 +618,52 @@ function viewHome() {
         <button class="btn btn-ghost btn-block" data-act="open-create" data-demo="1">${I.play}Try a demo meeting</button>
       </div>
     </section>
-    <div class="home-art"><svg viewBox="0 0 320 200" class="home-arc" aria-hidden="true"><circle cx="30.9" cy="144.3" r="9" class="ha-f"/><circle cx="38.4" cy="113.9" r="9" class="ha-o"/><circle cx="53.0" cy="86.2" r="9" class="ha-f"/><circle cx="73.8" cy="62.7" r="9" class="ha-f"/><circle cx="99.6" cy="44.9" r="9" class="ha-f"/><circle cx="128.9" cy="33.8" r="9" class="ha-f"/><circle cx="160.0" cy="30.0" r="9" class="ha-l"/><circle cx="191.1" cy="33.8" r="9" class="ha-f"/><circle cx="220.4" cy="44.9" r="9" class="ha-o"/><circle cx="246.2" cy="62.7" r="9" class="ha-f"/><circle cx="267.0" cy="86.2" r="9" class="ha-f"/><circle cx="281.6" cy="113.9" r="9" class="ha-f"/><circle cx="289.1" cy="144.3" r="9" class="ha-o"/><circle cx="61.2" cy="144.4" r="8.5" class="ha-f"/><circle cx="70.9" cy="114.6" r="8.5" class="ha-f"/><circle cx="89.3" cy="89.3" r="8.5" class="ha-f"/><circle cx="114.6" cy="70.9" r="8.5" class="ha-f"/><circle cx="144.4" cy="61.2" r="8.5" class="ha-l"/><circle cx="175.6" cy="61.2" r="8.5" class="ha-f"/><circle cx="205.4" cy="70.9" r="8.5" class="ha-o"/><circle cx="230.7" cy="89.3" r="8.5" class="ha-f"/><circle cx="249.1" cy="114.6" r="8.5" class="ha-f"/><circle cx="258.8" cy="144.4" r="8.5" class="ha-f"/><circle cx="91.8" cy="144.4" r="8" class="ha-o"/><circle cx="105.3" cy="116.4" r="8" class="ha-f"/><circle cx="129.6" cy="96.9" r="8" class="ha-f"/><circle cx="160.0" cy="90.0" r="8" class="ha-f"/><circle cx="190.4" cy="96.9" r="8" class="ha-f"/><circle cx="214.7" cy="116.4" r="8" class="ha-l"/><circle cx="228.2" cy="144.4" r="8" class="ha-f"/><circle cx="160" cy="160" r="40" class="ha-pod"/><image href="cbi-emblem.png" x="137" y="137" width="46" height="46"/></svg><div class="ha-name">Hazri</div><div class="ha-sub">VC attendance · Regional Office Udaipur</div></div>
+    <div class="home-art"><svg viewBox="0 0 320 200" class="home-arc" id="home-arc"><circle cx="30.9" cy="144.3" r="9" class="ha-s ha-f" data-r="2" data-d="490"/><circle cx="38.4" cy="113.9" r="9" class="ha-s ha-o" data-r="2" data-d="470"/><circle cx="53.0" cy="86.2" r="9" class="ha-s ha-f" data-r="2" data-d="450"/><circle cx="73.8" cy="62.7" r="9" class="ha-s ha-f" data-r="2" data-d="430"/><circle cx="99.6" cy="44.9" r="9" class="ha-s ha-f" data-r="2" data-d="410"/><circle cx="128.9" cy="33.8" r="9" class="ha-s ha-f" data-r="2" data-d="390"/><circle cx="160.0" cy="30.0" r="9" class="ha-s ha-l" data-r="2" data-d="370"/><circle cx="191.1" cy="33.8" r="9" class="ha-s ha-f" data-r="2" data-d="390"/><circle cx="220.4" cy="44.9" r="9" class="ha-s ha-o" data-r="2" data-d="410"/><circle cx="246.2" cy="62.7" r="9" class="ha-s ha-f" data-r="2" data-d="430"/><circle cx="267.0" cy="86.2" r="9" class="ha-s ha-f" data-r="2" data-d="450"/><circle cx="281.6" cy="113.9" r="9" class="ha-s ha-f" data-r="2" data-d="470"/><circle cx="289.1" cy="144.3" r="9" class="ha-s ha-o" data-r="2" data-d="490"/><circle cx="61.2" cy="144.4" r="8.5" class="ha-s ha-f" data-r="1" data-d="337"/><circle cx="70.9" cy="114.6" r="8.5" class="ha-s ha-f" data-r="1" data-d="311"/><circle cx="89.3" cy="89.3" r="8.5" class="ha-s ha-f" data-r="1" data-d="285"/><circle cx="114.6" cy="70.9" r="8.5" class="ha-s ha-f" data-r="1" data-d="259"/><circle cx="144.4" cy="61.2" r="8.5" class="ha-s ha-l" data-r="1" data-d="233"/><circle cx="175.6" cy="61.2" r="8.5" class="ha-s ha-f" data-r="1" data-d="232"/><circle cx="205.4" cy="70.9" r="8.5" class="ha-s ha-o" data-r="1" data-d="259"/><circle cx="230.7" cy="89.3" r="8.5" class="ha-s ha-f" data-r="1" data-d="285"/><circle cx="249.1" cy="114.6" r="8.5" class="ha-s ha-f" data-r="1" data-d="311"/><circle cx="258.8" cy="144.4" r="8.5" class="ha-s ha-f" data-r="1" data-d="337"/><circle cx="91.8" cy="144.4" r="8" class="ha-s ha-o" data-r="0" data-d="181"/><circle cx="105.3" cy="116.4" r="8" class="ha-s ha-f" data-r="0" data-d="144"/><circle cx="129.6" cy="96.9" r="8" class="ha-s ha-f" data-r="0" data-d="107"/><circle cx="160.0" cy="90.0" r="8" class="ha-s ha-f" data-r="0" data-d="70"/><circle cx="190.4" cy="96.9" r="8" class="ha-s ha-f" data-r="0" data-d="107"/><circle cx="214.7" cy="116.4" r="8" class="ha-s ha-l" data-r="0" data-d="144"/><circle cx="228.2" cy="144.4" r="8" class="ha-s ha-f" data-r="0" data-d="181"/><g class="ha-pod-g" data-act="arc-tap" role="button" tabindex="0" aria-label="Tap the emblem"><circle cx="160" cy="160" r="48" fill="transparent"/><circle cx="160" cy="160" r="40" class="ha-pod"/><image href="cbi-emblem.png" x="137" y="137" width="46" height="46"/></g></svg><div class="ha-name">Hazri</div><div class="ha-sub">VC attendance · Regional Office Udaipur</div></div>
     ${ready ? '' : `<div class="banner info">${I.info}<div><b>Google is not connected yet.</b> Demo meetings work now. To create real meetings, add your Client ID in <button class="btn-link" data-act="tab" data-tab="settings" style="border:0;background:none;padding:0;color:var(--accent);font-weight:600">Settings</button>.</div></div>`}`;
+}
+
+/* Home art: tap the emblem for a roll-call ripple; five quick taps for confetti. */
+const ARC = { anims: [], taps: [] };
+function arcTap() {
+  const svgEl = $('#home-arc'); if (!svgEl) return;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const acc = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#146CC0';
+  ARC.anims.forEach(a => a.cancel()); ARC.anims = [];
+  const buzz = p => { try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} };
+  buzz(12);
+  const pod = $('.ha-pod-g', svgEl);
+  if (!reduce) ARC.anims.push(pod.animate([{ transform: 'scale(1)' }, { transform: 'scale(.9)', offset: .3 }, { transform: 'scale(1.05)', offset: .7 }, { transform: 'scale(1)' }], { duration: 380, easing: 'ease-out' }));
+  $$('.ha-s', svgEl).forEach(c => {
+    const cs = getComputedStyle(c);
+    const base = { fill: cs.fill, fillOpacity: cs.fillOpacity, strokeOpacity: cs.strokeOpacity };
+    const lit = { fill: acc, fillOpacity: 1, strokeOpacity: 0 };
+    const frames = reduce
+      ? [base, { ...lit, offset: .25 }, { ...lit, offset: .7 }, base]
+      : [{ ...base, transform: 'scale(1)' }, { ...lit, transform: 'scale(1.38)', offset: .14 }, { ...lit, transform: 'scale(.94)', offset: .28 }, { ...lit, transform: 'scale(1)', offset: .4 }, { ...lit, transform: 'scale(1)', offset: .72 }, { ...base, transform: 'scale(1)' }];
+    ARC.anims.push(c.animate(frames, { duration: 1150, delay: +c.dataset.d, easing: 'cubic-bezier(.3,.7,.4,1)' }));
+  });
+  [70, 220, 370].forEach(t => setTimeout(() => buzz(8), t + 40));
+  const t = Date.now(); ARC.taps = ARC.taps.filter(x => t - x < 1600); ARC.taps.push(t);
+  if (ARC.taps.length >= 5) { ARC.taps = []; confetti(pod.getBoundingClientRect(), reduce); setTimeout(() => buzz([20, 40, 30]), 120); }
+}
+function confetti(from, reduce) {
+  const cv = document.createElement('canvas'), dpr = Math.min(2, devicePixelRatio || 1);
+  cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+  cv.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:60';
+  document.body.appendChild(cv);
+  const c = cv.getContext('2d'); c.scale(dpr, dpr);
+  const cx = from.left + from.width / 2, cy = from.top + from.height / 2;
+  const cols = ['#146CC0', '#D20838', '#5AA6EB', '#0B4A8F', '#F15A7A'];
+  const N = reduce ? 40 : 120;
+  const ps = Array.from({ length: N }, () => { const a = -Math.PI / 2 + (Math.random() - .5) * 1.9, v = 6 + Math.random() * 9; return { x: cx, y: cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, w: 6 + Math.random() * 6, h: 3 + Math.random() * 5, r: Math.random() * 6, vr: (Math.random() - .5) * .4, col: cols[Math.random() * cols.length | 0] }; });
+  const t0 = performance.now();
+  const step = now => {
+    const t = (now - t0) / 1000; c.clearRect(0, 0, innerWidth, innerHeight);
+    for (const p of ps) { p.vy += .32; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+      c.save(); c.globalAlpha = Math.max(0, 1 - Math.max(0, t - 1.3) / .7); c.translate(p.x, p.y); c.rotate(p.r); c.fillStyle = p.col; c.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.r * 2))); c.restore(); }
+    if (t < 2.0) requestAnimationFrame(step); else cv.remove();
+  };
+  requestAnimationFrame(step);
 }
 
 /* ───────────────────────── views: create + share ───────────────────────── */
@@ -860,7 +904,7 @@ async function requestPersist(silent) {
   if (U.tab === 'settings') renderMain();
 }
 /* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 20;
+const APP_VERSION = 21;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
@@ -1507,6 +1551,7 @@ const ACT = {
   'edit-expected': () => { closeSheet(true); U.draft = { expected: S.session.expected.slice() }; U.sessionDraft = U.draft; openExpected(); },
   'edit-details': () => { closeSheet(true); openDetailsEdit(); },
   'import-staff': () => pickImport('staff'),
+  'arc-tap': () => arcTap(),
   'check-update': () => checkUpdate(true),
   'apply-update': () => applyUpdate(),
   'attendance-image': () => { closeSheet(true); openAttendanceImage(); },
