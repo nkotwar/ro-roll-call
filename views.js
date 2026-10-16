@@ -24,13 +24,14 @@ function viewHome() {
         <button class="btn btn-ghost btn-block" data-act="open-create" data-demo="1">${I.play}Try a demo meeting</button>
       </div>
     </section>
-    <div class="home-art"><svg viewBox="0 0 320 200" class="home-arc" id="home-arc"><circle cx="30.9" cy="144.3" r="9" class="ha-s ha-f" data-r="2" data-d="490"/><circle cx="38.4" cy="113.9" r="9" class="ha-s ha-o" data-r="2" data-d="470"/><circle cx="53.0" cy="86.2" r="9" class="ha-s ha-f" data-r="2" data-d="450"/><circle cx="73.8" cy="62.7" r="9" class="ha-s ha-f" data-r="2" data-d="430"/><circle cx="99.6" cy="44.9" r="9" class="ha-s ha-f" data-r="2" data-d="410"/><circle cx="128.9" cy="33.8" r="9" class="ha-s ha-f" data-r="2" data-d="390"/><circle cx="160.0" cy="30.0" r="9" class="ha-s ha-l" data-r="2" data-d="370"/><circle cx="191.1" cy="33.8" r="9" class="ha-s ha-f" data-r="2" data-d="390"/><circle cx="220.4" cy="44.9" r="9" class="ha-s ha-o" data-r="2" data-d="410"/><circle cx="246.2" cy="62.7" r="9" class="ha-s ha-f" data-r="2" data-d="430"/><circle cx="267.0" cy="86.2" r="9" class="ha-s ha-f" data-r="2" data-d="450"/><circle cx="281.6" cy="113.9" r="9" class="ha-s ha-f" data-r="2" data-d="470"/><circle cx="289.1" cy="144.3" r="9" class="ha-s ha-o" data-r="2" data-d="490"/><circle cx="61.2" cy="144.4" r="8.5" class="ha-s ha-f" data-r="1" data-d="337"/><circle cx="70.9" cy="114.6" r="8.5" class="ha-s ha-f" data-r="1" data-d="311"/><circle cx="89.3" cy="89.3" r="8.5" class="ha-s ha-f" data-r="1" data-d="285"/><circle cx="114.6" cy="70.9" r="8.5" class="ha-s ha-f" data-r="1" data-d="259"/><circle cx="144.4" cy="61.2" r="8.5" class="ha-s ha-l" data-r="1" data-d="233"/><circle cx="175.6" cy="61.2" r="8.5" class="ha-s ha-f" data-r="1" data-d="232"/><circle cx="205.4" cy="70.9" r="8.5" class="ha-s ha-o" data-r="1" data-d="259"/><circle cx="230.7" cy="89.3" r="8.5" class="ha-s ha-f" data-r="1" data-d="285"/><circle cx="249.1" cy="114.6" r="8.5" class="ha-s ha-f" data-r="1" data-d="311"/><circle cx="258.8" cy="144.4" r="8.5" class="ha-s ha-f" data-r="1" data-d="337"/><circle cx="91.8" cy="144.4" r="8" class="ha-s ha-o" data-r="0" data-d="181"/><circle cx="105.3" cy="116.4" r="8" class="ha-s ha-f" data-r="0" data-d="144"/><circle cx="129.6" cy="96.9" r="8" class="ha-s ha-f" data-r="0" data-d="107"/><circle cx="160.0" cy="90.0" r="8" class="ha-s ha-f" data-r="0" data-d="70"/><circle cx="190.4" cy="96.9" r="8" class="ha-s ha-f" data-r="0" data-d="107"/><circle cx="214.7" cy="116.4" r="8" class="ha-s ha-l" data-r="0" data-d="144"/><circle cx="228.2" cy="144.4" r="8" class="ha-s ha-f" data-r="0" data-d="181"/><g class="ha-pod-g" data-act="arc-tap" role="button" tabindex="0" aria-label="Tap the emblem"><circle cx="160" cy="160" r="48" fill="transparent"/><circle cx="160" cy="160" r="40" class="ha-pod"/><image href="cbi-emblem.png" x="137" y="137" width="46" height="46"/></g></svg><div class="ha-name">Hazri</div><div class="ha-sub">VC attendance · Regional Office Udaipur</div></div>
+    <div class="home-art"><svg viewBox="0 0 320 200" class="home-arc" id="home-arc"><circle cx="30.9" cy="144.3" r="9" class="ha-s ha-f" data-r="2" data-d="490"/><circle cx="38.4" cy="113.9" r="9" class="ha-s ha-o" data-r="2" data-d="470"/><circle cx="53.0" cy="86.2" r="9" class="ha-s ha-f" data-r="2" data-d="450"/><circle cx="73.8" cy="62.7" r="9" class="ha-s ha-f" data-r="2" data-d="430"/><circle cx="99.6" cy="44.9" r="9" class="ha-s ha-f" data-r="2" data-d="410"/><circle cx="128.9" cy="33.8" r="9" class="ha-s ha-f" data-r="2" data-d="390"/><circle cx="160.0" cy="30.0" r="9" class="ha-s ha-l" data-r="2" data-d="370"/><circle cx="191.1" cy="33.8" r="9" class="ha-s ha-f" data-r="2" data-d="390"/><circle cx="220.4" cy="44.9" r="9" class="ha-s ha-o" data-r="2" data-d="410"/><circle cx="246.2" cy="62.7" r="9" class="ha-s ha-f" data-r="2" data-d="430"/><circle cx="267.0" cy="86.2" r="9" class="ha-s ha-f" data-r="2" data-d="450"/><circle cx="281.6" cy="113.9" r="9" class="ha-s ha-f" data-r="2" data-d="470"/><circle cx="289.1" cy="144.3" r="9" class="ha-s ha-o" data-r="2" data-d="490"/><circle cx="61.2" cy="144.4" r="8.5" class="ha-s ha-f" data-r="1" data-d="337"/><circle cx="70.9" cy="114.6" r="8.5" class="ha-s ha-f" data-r="1" data-d="311"/><circle cx="89.3" cy="89.3" r="8.5" class="ha-s ha-f" data-r="1" data-d="285"/><circle cx="114.6" cy="70.9" r="8.5" class="ha-s ha-f" data-r="1" data-d="259"/><circle cx="144.4" cy="61.2" r="8.5" class="ha-s ha-l" data-r="1" data-d="233"/><circle cx="175.6" cy="61.2" r="8.5" class="ha-s ha-f" data-r="1" data-d="232"/><circle cx="205.4" cy="70.9" r="8.5" class="ha-s ha-o" data-r="1" data-d="259"/><circle cx="230.7" cy="89.3" r="8.5" class="ha-s ha-f" data-r="1" data-d="285"/><circle cx="249.1" cy="114.6" r="8.5" class="ha-s ha-f" data-r="1" data-d="311"/><circle cx="258.8" cy="144.4" r="8.5" class="ha-s ha-f" data-r="1" data-d="337"/><circle cx="91.8" cy="144.4" r="8" class="ha-s ha-o" data-r="0" data-d="181"/><circle cx="105.3" cy="116.4" r="8" class="ha-s ha-f" data-r="0" data-d="144"/><circle cx="129.6" cy="96.9" r="8" class="ha-s ha-f" data-r="0" data-d="107"/><circle cx="160.0" cy="90.0" r="8" class="ha-s ha-f" data-r="0" data-d="70"/><circle cx="190.4" cy="96.9" r="8" class="ha-s ha-f" data-r="0" data-d="107"/><circle cx="214.7" cy="116.4" r="8" class="ha-s ha-l" data-r="0" data-d="144"/><circle cx="228.2" cy="144.4" r="8" class="ha-s ha-f" data-r="0" data-d="181"/><circle cx="160" cy="160" r="44" class="ha-ring" pathLength="100"/><g class="ha-pod-g" data-act="arc-tap" role="button" tabindex="0" aria-label="Tap the emblem"><circle cx="160" cy="160" r="48" fill="transparent"/><circle cx="160" cy="160" r="40" class="ha-pod"/><image href="cbi-emblem.png" x="137" y="137" width="46" height="46" draggable="false"/></g></svg><div class="ha-name">Hazri</div><div class="ha-sub">VC attendance · Regional Office Udaipur</div></div>
     ${ready ? '' : `<div class="banner info">${I.info}<div><b>Google is not connected yet.</b> Demo meetings work now. To create real meetings, add your Client ID in <button class="btn-link" data-act="tab" data-tab="settings" style="border:0;background:none;padding:0;color:var(--accent);font-weight:600">Settings</button>.</div></div>`}`;
 }
 
-/* Home art: tap the emblem for a roll-call ripple; five quick taps for confetti. */
-const ARC = { anims: [], taps: [] };
+/* Home art: tap the emblem for a roll-call ripple; five quick taps, or hold it for 3 sec and let go, for confetti. */
+const ARC = { anims: [], taps: [], hold: null, skipClick: false };
 function arcTap() {
+  if (ARC.skipClick) { ARC.skipClick = false; return; }   // the click that ends a long press isn't a tap
   const svgEl = $('#home-arc'); if (!svgEl) return;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const acc = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#146CC0';
@@ -52,6 +53,62 @@ function arcTap() {
   const t = Date.now(); ARC.taps = ARC.taps.filter(x => t - x < 1600); ARC.taps.push(t);
   if (ARC.taps.length >= 5) { ARC.taps = []; confetti(pod.getBoundingClientRect(), reduce); setTimeout(() => buzz([20, 40, 30]), 120); }
 }
+/* Hold to charge: a ring fills around the emblem, the seats light up row by row from the inside out and
+   the emblem sinks a little. Let go early and it all eases back; hold the full 3 sec and it breathes,
+   ready, and letting go (any time after) pops it with confetti. */
+const HOLD_MS = 3000;
+function arcHoldStart(e) {
+  const svgEl = $('#home-arc'); if (!svgEl || ARC.hold) return;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const acc = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#146CC0';
+  const pod = $('.ha-pod-g', svgEl), ring = $('.ha-ring', svgEl);
+  const buzz = p => { try { navigator.vibrate && navigator.vibrate(p); } catch (err) {} };
+  const h = ARC.hold = { t0: performance.now(), anims: [], timers: [], ready: false, pod, ring, reduce, buzz, id: e.pointerId };
+  try { pod.setPointerCapture(e.pointerId); } catch (err) {}
+  // Wait a beat before showing anything, so ordinary taps stay ordinary.
+  h.timers.push(setTimeout(() => {
+    if (ARC.hold !== h) return;
+    ARC.anims.forEach(a => a.cancel()); ARC.anims = [];
+    const T = HOLD_MS - 180, ease = 'cubic-bezier(.35,0,.25,1)';
+    h.anims.push(ring.animate([{ strokeDashoffset: 100, opacity: 0 }, { strokeDashoffset: 92, opacity: 1, offset: .06 }, { strokeDashoffset: 0, opacity: 1 }], { duration: T, easing: 'linear', fill: 'forwards' }));
+    if (!reduce) h.anims.push(pod.animate([{ transform: 'scale(1)' }, { transform: 'scale(.9)' }], { duration: T, easing: ease, fill: 'forwards' }));
+    $$('.ha-s', svgEl).forEach(c => {
+      const cs = getComputedStyle(c), at = (+c.dataset.d - 70) / 420 * (T - 500) + 150;
+      h.anims.push(c.animate([{ fill: cs.fill, fillOpacity: cs.fillOpacity, strokeOpacity: cs.strokeOpacity }, { fill: acc, fillOpacity: .9, strokeOpacity: 0 }], { duration: 320, delay: at, easing: 'ease-out', fill: 'forwards' }));
+    });
+    [.25, .5, .75].forEach(f => h.timers.push(setTimeout(() => buzz(6), 180 + T * f)));
+    h.timers.push(setTimeout(() => {                    // fully charged: breathe and wait for the release
+      if (ARC.hold !== h) return;
+      h.ready = true; buzz([18, 40, 18]);
+      ring.classList.add('ready');
+      if (!reduce) h.breath = pod.animate([{ transform: 'scale(.9)' }, { transform: 'scale(.95)' }, { transform: 'scale(.9)' }], { duration: 900, iterations: Infinity, easing: 'ease-in-out', composite: 'replace' });
+    }, T));
+  }, 180));
+}
+function arcHoldEnd(cancelled) {
+  const h = ARC.hold; if (!h) return;
+  ARC.hold = null; h.timers.forEach(clearTimeout);
+  const held = performance.now() - h.t0;
+  if (held > 260) { ARC.skipClick = true; setTimeout(() => { ARC.skipClick = false; }, 400); }
+  h.ring.classList.remove('ready');
+  if (h.ready && !cancelled) {                          // pop
+    if (h.breath) h.breath.cancel();
+    const from = h.pod.getBoundingClientRect();
+    h.anims.forEach(a => a.cancel());
+    if (!h.reduce) ARC.anims.push(h.pod.animate([{ transform: 'scale(.9)' }, { transform: 'scale(1.16)', offset: .35 }, { transform: 'scale(.97)', offset: .7 }, { transform: 'scale(1)' }], { duration: 520, easing: 'cubic-bezier(.3,.7,.4,1)' }));
+    ARC.anims.push(h.ring.animate([{ strokeDashoffset: 0, opacity: 1, transform: 'rotate(-90deg) scale(1)' }, { strokeDashoffset: 0, opacity: 0, transform: 'rotate(-90deg) scale(1.35)' }], { duration: 480, easing: 'ease-out' }));
+    $$('.ha-s', $('#home-arc')).forEach(c => ARC.anims.push(c.animate([{ fill: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(), fillOpacity: .9, strokeOpacity: 0 }, { fillOpacity: getComputedStyle(c).fillOpacity, strokeOpacity: getComputedStyle(c).strokeOpacity }], { duration: 900, delay: 100 + (+c.dataset.d) * .6, easing: 'ease-out', fill: 'backwards' })));
+    confetti(from, h.reduce); h.buzz([25, 50, 35]);
+    return;
+  }
+  // Let go early: everything eases back from wherever it got to, quickly.
+  if (h.breath) h.breath.cancel();
+  h.anims.forEach(a => { try { a.updatePlaybackRate(-3.5); a.play(); a.finished.then(() => a.cancel()).catch(() => {}); } catch (err) { a.cancel(); } });
+}
+document.addEventListener('pointerdown', e => { if (e.button === 0 && e.target.closest && e.target.closest('#home-arc .ha-pod-g')) arcHoldStart(e); });
+document.addEventListener('pointerup', e => { if (ARC.hold && e.pointerId === ARC.hold.id) arcHoldEnd(false); });
+document.addEventListener('pointercancel', e => { if (ARC.hold && e.pointerId === ARC.hold.id) arcHoldEnd(!ARC.hold.ready); });
+document.addEventListener('contextmenu', e => { if (e.target.closest && e.target.closest('#home-arc')) e.preventDefault(); });
 function confetti(from, reduce) {
   const cv = document.createElement('canvas'), dpr = Math.min(2, devicePixelRatio || 1);
   cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
