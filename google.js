@@ -9,10 +9,11 @@ const G = {
   restore() { try { const t = JSON.parse(sessionStorage.getItem('rc.tok')); if (t && t.exp > now() + 60000) { this.token = t.token; this.exp = t.exp; } } catch (e) {} },
   loadLib() {
     if (window.google && google.accounts && google.accounts.oauth2) return Promise.resolve();
-    return new Promise((res, rej) => {
+    if (this.libP) return this.libP;
+    return this.libP = new Promise((res, rej) => {
       const s = document.createElement('script');
       s.src = 'https://accounts.google.com/gsi/client'; s.async = true;
-      s.onload = () => res(); s.onerror = () => rej(new AppError('Could not reach Google sign-in. Check your internet connection.'));
+      s.onload = () => res(); s.onerror = () => { this.libP = null; s.remove(); rej(new AppError('Could not reach Google sign-in. Check your internet connection.')); };
       document.head.appendChild(s);
     });
   },
@@ -105,7 +106,15 @@ function blockedField(msg, skip) {
   const m = String(msg || '').toLowerCase();
   return Object.keys(CTRL_FIELDS).find(f => !skip.has(f) && m.includes(f.toLowerCase()));
 }
+/* Open the line to Google's Meet server ahead of time (on the New meeting screen and again on the
+   Create tap, while the account picker is up), so creating the room needs only the request itself. */
+function warmGoogle() {
+  if (!S.settings.clientId || !navigator.onLine) return;
+  G.loadLib().catch(() => {});
+  fetch(API, { method: 'HEAD', mode: 'no-cors', cache: 'no-store' }).catch(() => {});
+}
 async function googleCreate(ctrl) {
+  warmGoogle();
   const skip = new Set();
   const dropped = [];
   for (let i = 0; i < 8; i++) {

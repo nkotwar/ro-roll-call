@@ -14,7 +14,7 @@ async function doCreate() {
     save(); U.draft = null; leaveRoute(); U.boardTab = 'miss'; render(); syncNow(); return;
   }
   if (!S.settings.clientId) { toast('Add your Google Client ID in Settings first.'); return; }
-  const btn = $('#create-btn'); btn.disabled = true; btn.textContent = 'Creating…';
+  setCreateBusy(true);
   try {
     S.settings.controls = { ...d.controls };
     const { space, note } = await googleCreate(d.controls);
@@ -24,7 +24,7 @@ async function doCreate() {
     go({ name: 'share' });
     scheduleSync(8000);
   } catch (e) {
-    btn.disabled = false; btn.innerHTML = I.plus + 'Create meeting';
+    setCreateBusy(false);
     toast(e.message);
   }
 }

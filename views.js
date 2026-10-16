@@ -161,20 +161,40 @@ function toggleAgenda(text, item) {
   if (i >= 0) parts.splice(i, 1); else parts.push(item);
   return parts.join(', ');
 }
-function agendaPicks(text, scope) {
+function agendaPicks(text, scope, recent = []) {
   const on = new Set(agendaParts(text).map(x => x.toLowerCase()));
-  return `<div class="picks wrap" data-agenda-picks="${scope}">${AGENDA_PRESETS.map(a => `<button type="button" class="pick" aria-pressed="${on.has(a.toLowerCase())}" data-act="agenda-toggle" data-scope="${scope}" data-v="${esc(a)}">${esc(a)}</button>`).join('')}</div>`;
+  return `<div class="picks" data-agenda-picks="${scope}">${AGENDA_PRESETS.map(a => `<button type="button" class="pick" aria-pressed="${on.has(a.toLowerCase())}" data-act="agenda-toggle" data-scope="${scope}" data-v="${esc(a)}">${esc(a)}</button>`).join('')}${recent.map(a => `<button type="button" class="pick" data-act="draft-pick" data-k="agenda" data-v="${esc(a)}">${esc(a.length > 34 ? a.slice(0, 32) + '…' : a)}</button>`).join('')}</div>`;
 }
 function syncAgendaPicks(scope, text) {
   const on = new Set(agendaParts(text).map(x => x.toLowerCase()));
-  $$(`[data-agenda-picks="${scope}"] .pick`).forEach(b => b.setAttribute('aria-pressed', on.has(b.dataset.v.toLowerCase())));
+  $$(`[data-agenda-picks="${scope}"] [data-act="agenda-toggle"]`).forEach(b => b.setAttribute('aria-pressed', on.has(b.dataset.v.toLowerCase())));
 }
 function seg(name, value, opts) {
   return `<div class="seg" role="group">${opts.map(([v, l]) => `<button type="button" aria-pressed="${v === value}" data-act="draft-set" data-k="${name}" data-v="${v}">${esc(l)}</button>`).join('')}</div>`;
 }
+/* The Create button: a heartbeat line runs across it while Google makes the room. */
+const ECG_PATH = (() => { let d = 'M0 20'; for (let x = 0; x < 400; x += 100) d += ` H${x + 52} L${x + 58} 15 L${x + 63} 20 H${x + 68} L${x + 72} 4 L${x + 77} 34 L${x + 81} 20 H${x + 88} L${x + 94} 13 L${x + 100} 20`; return d; })();
+function createBtn(d) {
+  const n = d.expected.filter(code => !unitByCode.get(code)?.isRO).length;
+  const sub = (d.demo ? 'Practice run' : 'Google Meet') + ` · ${n} branch${n === 1 ? '' : 'es'} to attend`;
+  return `<button type="button" class="cbtn" data-act="create" id="create-btn">
+    <svg class="cbtn-ecg" viewBox="0 0 400 40" preserveAspectRatio="none" aria-hidden="true"><path d="${ECG_PATH}"/></svg>
+    <span class="cbtn-ic">${d.demo ? I.play : I.video}</span>
+    <span class="cbtn-txt"><b>${d.demo ? 'Start demo' : 'Create meeting'}</b><small>${esc(sub)}</small></span>
+    <span class="cbtn-go">${I.chev}</span>
+  </button>`;
+}
+function setCreateBusy(on) {
+  const b = $('#create-btn'); if (!b) return;
+  b.disabled = on; b.classList.toggle('busy', on);
+  const t = $('.cbtn-txt b', b), sm = $('.cbtn-txt small', b);
+  if (on) { b.dataset.l = t.textContent; b.dataset.s = sm.textContent; t.textContent = 'Creating Meet link…'; sm.textContent = 'Checking in with Google'; }
+  else if (b.dataset.l) { t.textContent = b.dataset.l; sm.textContent = b.dataset.s; }
+}
 function viewCreate() {
   const d = U.draft;
   renderTop(d.demo ? 'Demo meeting' : 'New meeting', { back: true });
+  if (!d.demo) warmGoogle();
   const c = d.controls;
   const preset = new Set(AGENDA_PRESETS.map(a => a.toLowerCase()));
   const agendas = (S.recentAgendas || []).filter(a => !agendaParts(a).every(x => preset.has(x.toLowerCase()))).slice(0, 3);
@@ -185,13 +205,16 @@ function viewCreate() {
     ${d.demo ? `<div class="banner info">${I.play}<div>A demo meeting simulates branches joining every few seconds, so you can practise tagging. Nothing is sent to Google.</div></div>` : ''}
     <div class="when-row"><span class="flabel">Time of VC</span><label class="when-pill">${I.clock}<span class="when-txt">${esc(whenPill(d.when))}</span><input type="datetime-local" id="f-when" value="${esc(d.when)}" data-draft="when" aria-label="Time of VC" required></label></div>
     <div class="field"><label for="f-agenda">Agenda</label><textarea class="input" id="f-agenda" data-draft="agenda" rows="2" placeholder="Tap below or type your own">${esc(d.agenda)}</textarea>
-      ${agendaPicks(d.agenda, 'draft')}
-      ${agendas.length ? `<div class="picks">${agendas.map(a => `<button type="button" class="pick" data-act="draft-pick" data-k="agenda" data-v="${esc(a)}">${esc(a.length > 34 ? a.slice(0, 32) + '…' : a)}</button>`).join('')}</div>` : ''}</div>
+      ${agendaPicks(d.agenda, 'draft', agendas)}</div>
     <div class="field"><label for="f-head">Headed by</label><input class="input" id="f-head" data-draft="headedBy" value="${esc(d.headedBy)}" placeholder="Name and designation">
       <div class="picks">${headPicks().map(h => `<button type="button" class="pick" aria-pressed="${h === d.headedBy}" data-act="draft-pick" data-k="headedBy" data-v="${esc(h)}">${esc(h)}</button>`).join('')}</div></div>
     <div class="field"><span class="flabel">Who should attend</span>
       ${attField(d.expected)}</div>
   </form>
+  <div class="create-wrap">
+    ${createBtn(d)}
+    ${!d.demo && !S.settings.clientId ? `<p class="hint" style="text-align:center;margin:0">Google isn't connected yet. Add your Client ID in Settings, or start a demo.</p>` : ''}
+  </div>
   ${d.demo ? '' : `
   <div class="sec-label">Host controls</div>
   <section class="card">
@@ -211,10 +234,7 @@ function viewCreate() {
     </div>
   </section>
   <p class="hint" style="margin:-4px 2px 0">These become your defaults for the next meeting.</p>`}
-  <div style="display:flex;flex-direction:column;gap:10px">
-    <button class="btn btn-primary btn-block" data-act="create" id="create-btn">${d.demo ? I.play + 'Start demo' : I.plus + 'Create meeting'}</button>
-    ${!d.demo && !S.settings.clientId ? `<p class="hint" style="text-align:center;margin:0">Google isn't connected yet. Add your Client ID in Settings, or start a demo.</p>` : ''}
-  </div>`;
+`;
 }
 function shareText(s) {
   const d = s.details; const lines = ['*Video Conference – RO Udaipur*'];
