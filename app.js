@@ -16,7 +16,6 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => Math.random().toString(36).slice(2, 10);
 const now = () => Date.now();
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const svg = (d, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${d}</svg>`;
 const I = {
@@ -29,7 +28,6 @@ const I = {
   share: svg('<path d="M12 3v13"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>'),
   copy: svg('<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>'),
   chat: svg('<path d="M4 20l1.5-4A8 8 0 1 1 9 19.3z"/><path d="M9 10.5c.5 2 2 3.5 4 4l1.2-1.2 2 .8-.4 1.6c-3.6.2-7.6-3.8-7.4-7.4L10 7.9l.8 2z"/>'),
-  ext: svg('<path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/>'),
   check: svg('<path d="m5 12 5 5 9-10"/>'),
   x: svg('<path d="M6 6l12 12M18 6 6 18"/>'),
   search: svg('<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4-4"/>'),
@@ -44,7 +42,6 @@ const I = {
   up: svg('<path d="M12 20V8"/><path d="m7 13 5-5 5 5"/><path d="M5 4h14"/>'),
   edit: svg('<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13 7 4 4"/>'),
   trash: svg('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>'),
-  user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
   google: svg('<circle cx="12" cy="12" r="9"/><path d="M12 12h8"/>'),
   clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
   stop: svg('<rect x="6" y="6" width="12" height="12" rx="2"/>'),
@@ -303,6 +300,10 @@ const G = {
     if (!S.settings.clientId) throw new AppError('Add your Google Client ID in Settings first.', 'noclient');
     if (!interactive) throw new AppError('Google sign-in has expired. Tap Reconnect.', 'reauth');
     await this.loadLib();
+    return this.request(S.settings.signedIn ? '' : 'consent');
+  },
+  // Ask Google for a fresh 1-hour token. Must run inside a tap: Google opens a small window.
+  request(prompt) {
     return new Promise((res, rej) => {
       const client = google.accounts.oauth2.initTokenClient({
         client_id: cleanClientId(S.settings.clientId) || DEFAULT_CLIENT_ID, scope: SCOPES,
@@ -316,8 +317,22 @@ const G = {
         },
         error_callback: e => rej(new AppError(e && e.type === 'popup_closed' ? 'The Google sign-in window was closed.' : 'Google sign-in was blocked. Allow pop-ups for this app and try again.'))
       });
-      client.requestAccessToken({ prompt: S.settings.signedIn ? '' : 'consent' });
+      client.requestAccessToken({ prompt });
     });
+  },
+  // Tokens last an hour and a static app can't renew them in the background. So when a live
+  // Google meeting is running and less than 15 minutes remain, the next tap renews it quietly.
+  refreshing: false,
+  needsRefresh() {
+    const s = S.session;
+    return !!(this.token && S.settings.signedIn && s && s.source !== 'demo' && !s.ended && !this.refreshing &&
+      this.exp - now() < 15 * 60e3 && window.google && google.accounts && google.accounts.oauth2);
+  },
+  async refreshOnTap() {
+    if (!this.needsRefresh()) return;
+    this.refreshing = true;
+    try { await this.request(''); } catch (e) { /* next tap tries again; on expiry the board shows Reconnect */ }
+    finally { setTimeout(() => { this.refreshing = false; }, 30000); }
   },
   signOut() {
     if (this.token && window.google && google.accounts) try { google.accounts.oauth2.revoke(this.token, () => {}); } catch (e) {}
@@ -337,6 +352,8 @@ const G = {
   }
 };
 G.restore();
+if (G.token) G.loadLib().catch(() => {});
+addEventListener('pointerup', () => G.refreshOnTap(), true);
 
 const parseCode = s => { const m = String(s || '').match(/([a-z]{3}-?[a-z]{4}-?[a-z]{3})(?![a-z])/i); if (!m) return ''; const c = m[1].toLowerCase().replace(/-/g, ''); return `${c.slice(0, 3)}-${c.slice(3, 7)}-${c.slice(7)}`; };
 
@@ -1145,16 +1162,16 @@ async function requestPersist(silent) {
   } catch (e) { if (!silent) toast('Could not protect storage.'); }
   if (U.tab === 'settings') renderMain();
 }
-/* App version: keep APP_VERSION equal to the number in sw.js VERSION ('rollcall-vN') on every release. */
-const APP_VERSION = 48;
+/* Release number lives only in version.js (loaded before this file). */
+const APP_VERSION = self.HAZRI_VERSION || 0;
 async function checkUpdate(force) {
   if (U.update && U.update.busy) return;
   if (U.update && !force && Date.now() - U.update.at < 60e3) return;
   U.update = { busy: true, at: Date.now(), latest: (U.update || {}).latest };
   if (U.tab === 'settings' && !U.route) renderMain();
   try {
-    const r = await fetch('sw.js?cb=' + Date.now(), { cache: 'no-store' });
-    const m = /rollcall-v(\d+)/.exec(await r.text());
+    const r = await fetch('version.js?check=' + Date.now(), { cache: 'no-store' });
+    const m = /HAZRI_VERSION\s*=\s*(\d+)/.exec(await r.text());
     if (!m) throw new Error('no version');
     U.update = { at: Date.now(), latest: +m[1] };
   } catch (e) { U.update = { at: Date.now(), error: true }; }
@@ -1165,7 +1182,7 @@ async function applyUpdate() {
   try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.unregister())); } catch (e) {}
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } catch (e) {}
   // GitHub Pages lets the browser keep files for ~10 minutes. Force fresh copies into the browser cache before reloading.
-  await Promise.all(['./', 'index.html', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'cbi-emblem.png'].map(f => fetch(f, { cache: 'reload' }).catch(() => {})));
+  await Promise.all(['./', 'index.html', 'version.js', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'cbi-emblem.png'].map(f => fetch(f, { cache: 'reload' }).catch(() => {})));
   try { sessionStorage.setItem('rc.tab', 'settings'); } catch (e) {}
   location.reload();
 }
@@ -1324,8 +1341,6 @@ function assign(key, target, remember) {
 }
 
 /* Expected branches sheet */
-const CAT_ORDER = ['URBAN', 'SEMI-URBAN', 'RURAL'];
-const catName = c => ({ URBAN: 'Urban', 'SEMI-URBAN': 'Semi-urban', RURAL: 'Rural', METRO: 'Metro' }[c] || (c ? c[0] + c.slice(1).toLowerCase() : 'Other'));
 function attSummary(codes) {
   const br = S.units.filter(u => !u.isRO), sel = new Set(codes);
   const n = br.filter(u => sel.has(u.code)).length, ro = S.units.some(u => u.isRO && sel.has(u.code));
@@ -1550,7 +1565,7 @@ async function doCreate() {
   if (S.session && !(await confirmSheet('Replace the current board?', 'Starting a new meeting closes the board for <b>' + esc(S.session.meetingCode) + '</b>. Your tags stay saved.', 'Start new meeting'))) return;
   if (d.demo) {
     S.session = startDemo(details, d.expected);
-    save(); U.draft = null; leaveRoute(); U.boardTab = 'miss'; U.shareText = null; render(); syncNow(); return;
+    save(); U.draft = null; leaveRoute(); U.boardTab = 'miss'; render(); syncNow(); return;
   }
   if (!S.settings.clientId) { toast('Add your Google Client ID in Settings first.'); return; }
   const btn = $('#create-btn'); btn.disabled = true; btn.textContent = 'Creating…';
@@ -1559,7 +1574,7 @@ async function doCreate() {
     const { space, note } = await googleCreate(d.controls);
     S.session = newSession({ source: 'google', spaceName: space.name, meetingUri: space.meetingUri, meetingCode: space.meetingCode, details, expected: d.expected, controlsNote: note });
     S.lastMeet = { code: space.meetingCode, at: now(), how: 'created' };
-    save(); U.draft = null; U.shareText = null; U.boardTab = 'miss';
+    save(); U.draft = null; U.boardTab = 'miss';
     go({ name: 'share' });
     scheduleSync(8000);
   } catch (e) {
@@ -1818,9 +1833,8 @@ const ACT = {
   'copy-share': () => copyText(shareText(S.session), 'Message copied'),
   'det-pick': el => { const inp = $('#m-head'); if (!inp) return; inp.value = el.dataset.v; onDetail(inp); },
   'to-board': () => { leaveRoute(); U.tab = 'meet'; render(); window.scrollTo(0, 0); },
-  'go-share': () => { U.shareText = null; go({ name: 'share' }); },
+  'go-share': () => go({ name: 'share' }),
   'board-tab': el => { U.boardTab = el.dataset.k; renderMain(); },
-  sync: () => { if (!S.session) return; S.session.error = null; syncNow(); },
   reconnect: async () => { try { await G.getToken(true); S.session && (S.session.error = null); syncNow(); } catch (e) { toast(e.message); } },
   tag: el => openTag(el.dataset.key, el.dataset.mode),
   assign: el => {
@@ -1857,7 +1871,6 @@ const ACT = {
   'apply-update': () => applyUpdate(),
   'attendance-image': () => { closeSheet(true); openAttendanceImage(); },
   'copy-summary': () => { copyText(summaryText(), 'Attendance summary copied'); closeSheet(); },
-  'end-session': async () => { closeSheet(true); if (await confirmSheet('Close this session?', 'The board for <b>' + esc(S.session.meetingCode) + '</b> will be cleared. Tags you saved stay on this phone.', 'Close session', true)) { clearTimeout(syncTimer); S.session = null; save(); render(); } },
   'dir-filter': el => { U.dirFilter = el.dataset.k; renderMain(); },
   'open-unit': el => go({ name: 'unit', code: +el.dataset.code }),
   'edit-unit': el => openUnitEdit(+el.dataset.code),

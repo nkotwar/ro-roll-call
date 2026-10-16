@@ -7,7 +7,7 @@ The app is public code on GitHub. **Staff data never goes to GitHub**: you load 
 ## 1. Put the app on GitHub Pages
 
 1. On github.com, click **+ → New repository**. Name it `ro-roll-call`, set it to **Public**, and click **Create repository**.
-2. Click **uploading an existing file**, then drag in every file from this folder: `index.html`, `app.js`, `sw.js`, `manifest.webmanifest`, `icon.svg`, `icon-192.png`, `icon-512.png`, `README.md`, `SETUP.md` and `.gitignore`. Click **Commit changes**.
+2. Click **uploading an existing file**, then drag in every file from this folder: `index.html`, `version.js`, `app.js`, `sw.js`, `manifest.webmanifest`, `icon.svg`, `icon-192.png`, `icon-512.png`, `README.md`, `SETUP.md` and `.gitignore`. Click **Commit changes**.
    - Do **not** upload `udairo.js`, or any backup or mappings file.
    - `.gitignore` is hidden on some computers. If you can't see it, skip it; it only protects you when using git from a computer.
 3. In the repository, go to **Settings → Pages**. Under *Build and deployment*, set Source to **Deploy from a branch**, Branch to **main**, folder **/ (root)**, then **Save**.
@@ -48,6 +48,6 @@ A new origin can take a few minutes to start working. If sign-in says `origin_mi
 - **Backups:** tags live only on this phone. Use Settings → *Full backup* now and then and send it to yourself on Drive or WhatsApp. A full backup contains staff data, so keep it private. *Mappings only* moves tags to a second phone.
 - **Existing meetings:** *Track an existing meeting* works for Meet links created from the same Google account (Calendar or the Meet app).
 - **Host controls:** if Google rejects them for a personal Gmail, the app still creates an Open meeting and tells you to set chat and screen sharing from Meet's own Host controls.
-- **Updating the app:** upload the changed files to the repository, and change `VERSION` in `sw.js` (e.g. `rollcall-v3`) so phones pick up the update.
+- **Updating the app:** upload the changed files and raise the number in `version.js` (the only place the version lives). Phones then show "Version N is available" in Settings → App; tap **Update now**.
 
 Built by Nitin Kotwar (139535), via PDUDAIRO.
