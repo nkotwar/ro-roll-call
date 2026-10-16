@@ -112,7 +112,7 @@ function liveDevice() {
 }
 
 /* ───────────────────────── host side ───────────────────────── */
-const LH = { cur: null, k0: null, kc: null, e: 0, listener: null, tree: null, lastJson: '', lastSnap: null, hbT: 0, remote: {}, viewers: {}, granted: {}, watchers: 0, busy: false };
+const LH = { cur: null, k0: null, kc: null, e: 0, keys: {}, names: {}, listener: null, tree: null, lastJson: '', lastSnap: null, hbT: 0, remote: {}, viewers: {}, granted: {}, watchers: 0, busy: false };
 function liveLink(l) {
   const local = LIVE_DB !== LIVE_HOME ? '?livedb=' + encodeURIComponent(LIVE_DB) : '';
   return location.origin + location.pathname.replace(/index\.html$/, '') + local + '#w=' + l.id + '.' + l.key;
@@ -152,6 +152,7 @@ async function liveReconcile() {
 }
 async function liveBegin(l) {
   LH.cur = l; LH.k0 = await liveKey(l.key); LH.e = l.e || 0; LH.kc = LH.e ? await liveKey(l.kc) : LH.k0;
+  LH.keys = { 0: LH.k0 }; for (const e in l.old || {}) LH.keys[e] = await liveKey(l.old[e]); LH.keys[LH.e] = LH.kc;
   LH.lastJson = ''; LH.remote = {}; LH.viewers = {}; LH.granted = {};
   LH.listener = liveListen(l.id, 'calls', tree => { LH.tree = tree; liveHostCalls(tree); });
   clearInterval(LH.hbT);
@@ -194,15 +195,15 @@ async function liveHostCalls(tree) {
   for (const k in tree) {
     if (LH.remote[k] === tree[k]) continue;
     LH.remote[k] = tree[k];
-    if (k.startsWith('g_') || k === '_hb') continue;
+    if (k.startsWith('g_') || k.startsWith('n_') || k === '_hb') continue;
     if (k.startsWith('p_')) {          // a viewer saying hello (always sealed with the link's own key)
       const v = await liveOpen(LH.k0, tree[k]); if (!v) continue;
       const vid = k.slice(2), old = LH.viewers[vid];
-      LH.viewers[vid] = { n: v.n || '', dev: v.dev || '', at: v.at, pub: v.pub, first: old ? old.first : v.at };
+      if (v.n && LH.names[vid] === v.n) delete LH.names[vid];   // the name we gave them has reached their phone
+      LH.viewers[vid] = { n: LH.names[vid] || v.n || '', dev: v.dev || '', at: v.at, pub: v.pub, first: old ? old.first : v.at };
       changed = true; continue;
     }
-    if (sealEpoch(tree[k]) !== LH.e) continue;   // written with an old key: someone who was removed
-    const v = await liveOpen(LH.kc, tree[k]); if (!v) continue;
+    const v = await liveOpen(LH.keys[sealEpoch(tree[k])], tree[k]); if (!v) continue;   // older keys too: a call finished after its caller was removed still counts
     const code = +k, mine = S.calls[code];
     if (!code || (mine && mine.at >= v.at)) continue;
     S.calls[code] = { status: v.status, at: v.at, who: v.who || '', num: v.num || '', by: v.by || '' };
@@ -238,8 +239,9 @@ async function liveAdmit() {
 async function liveRotate() {
   const l = LH.cur; if (!l) return;
   if (!l.hp) { const p = await livePair(); l.hp = p.priv; l.hpub = p.pub; }
+  if (l.e) l.old = { ...(l.old || {}), [l.e]: l.kc };
   l.e = (l.e || 0) + 1; l.kc = liveRand(32);
-  LH.e = l.e; LH.kc = await liveKey(l.kc); LH.granted = {}; LH.lastJson = '';
+  LH.e = l.e; LH.kc = await liveKey(l.kc); LH.keys[l.e] = LH.kc; LH.granted = {}; LH.lastJson = '';
   save();
   await liveAdmit();
   await livePush(true);
@@ -256,7 +258,7 @@ async function liveSetLock(on) {
     if (!LH.e) await liveRotate(); else save();
     toast('Locked. New people need your OK to watch.');
   } else {
-    l.lock = false; save(); await liveAdmit();
+    l.lock = false; l.dropped = []; save(); await liveAdmit();   // unlocked means everyone with the link is welcome, removed people too
     toast('Unlocked. Anyone with the link can watch.');
   }
   liveCount(); renderMain();
@@ -266,10 +268,14 @@ async function liveDrop(vid) {
   const l = LH.cur; if (!l) return;
   const hadKey = !LH.e || (l.admitted || {})[vid] || LH.granted[vid];
   l.dropped = [...new Set([...(l.dropped || []), vid])];
-  if (l.admitted) delete l.admitted[vid];
-  delete LH.viewers[vid];
+  if (l.admitted) delete l.admitted[vid];   // still known (hidden from the list), so unlocking can let them straight back in
   if (hadKey) await liveRotate(); else save();   // someone still waiting never had the key: nothing to change
   liveCount(); renderMain();
+}
+async function liveRenameViewer(vid, n) {
+  const l = LH.cur, v = LH.viewers[vid]; if (!l || !v) return;
+  LH.names[vid] = n; v.n = n; renderMain();
+  try { await liveReq('PUT', l.id, 'calls/n_' + vid, await liveSeal(LH.k0, { n })); } catch (e) { toast('Could not send the name. Check the internet.'); }
 }
 async function livePushCall(code) {
   if (!LH.cur || !LH.kc) return;
@@ -324,10 +330,13 @@ function liveViewerSheet(vid) {
   const v = liveViewerList().find(x => x.vid === vid); if (!v) return;
   openSheet(`<div class="sheet-head"><div class="grow"><h3>${esc(viewerLabel(v))}</h3><div class="sub">${v.n ? esc(v.dev) + ' · ' : ''}${v.waiting ? 'Waiting to watch' : 'Watching'} · opened ${esc(fmtTime(v.first))}</div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
     <div class="sheet-body">
+      <form class="field" id="lv-name-form"><label for="lv-name">Name</label><div class="row" style="gap:8px"><input class="input grow" id="lv-name" value="${esc(v.n)}" placeholder="Type who this is" maxlength="40"><button class="btn btn-soft" id="lv-name-ok" type="submit">Save</button></div>
+        <span class="hint">Shows here and on their screen.</span></form>
       ${v.waiting ? `<button class="btn btn-primary btn-block" id="lv-in">${I.check}Let in</button>` : ''}
       <button class="btn btn-danger btn-block" id="lv-out">${I.x}${v.waiting ? 'Keep out' : 'Remove from live board'}</button>
-      <p class="hint" style="margin:0">${v.waiting ? 'They can see nothing until you let them in.' : 'Their screen stops updating straight away and the link no longer opens the board for them.'}</p>
+      <p class="hint" style="margin:0">${v.waiting ? 'They can see nothing until you let them in.' : 'Their screen stops updating straight away. Unlocking the link later lets everyone back in, them too.'}</p>
     </div>`);
+  $('#lv-name-form').onsubmit = e => { e.preventDefault(); const n = $('#lv-name').value.trim().slice(0, 40); if (!n) return; closeSheet(); liveRenameViewer(vid, n); toast('Name saved'); };
   if ($('#lv-in')) $('#lv-in').onclick = () => { closeSheet(); liveLetIn(vid); toast(viewerLabel(v) + ' can watch now'); };
   $('#lv-out').onclick = () => { closeSheet(); liveDrop(vid); toast(viewerLabel(v) + ' removed'); };
 }
@@ -352,12 +361,6 @@ async function liveBoot() {
   LV.listener = liveListen(LV.id, '', (tree, ok) => liveViewerTree(tree, ok));
   livePresence(); LV.presT = setInterval(livePresence, 30e3);
   setInterval(() => { if (LV.snap) { const tx = $('#lv-fresh'); if (tx) tx.outerHTML = liveFreshLine(); } }, 5000);
-  let skipped = false; try { skipped = sessionStorage.getItem('hazri.skipname') === '1'; } catch (e) {}
-  if (!liveName() && !skipped) setTimeout(async () => {
-    const n = await askLiveName('So the host can see who is watching', true);
-    if (!n) try { sessionStorage.setItem('hazri.skipname', '1'); } catch (e) {}
-    livePresence(); renderMain();
-  }, 700);
 }
 async function livePresence() {
   if (!LV.k0 || !LV.me || document.hidden || LV.gone || LV.left) return;
@@ -383,9 +386,15 @@ async function liveViewerTree(tree, ok) {
   if (tree == null) { LV.gone = true; if (LV.snap) LV.snap.ended = true; renderMain(); ecgSync(); return; }
   LV.gone = false;
   const calls = tree.calls || {};
+  const nk = 'n_' + LV.me.vid;
+  if (calls[nk] && LV.rawCalls[nk] !== calls[nk]) {
+    LV.rawCalls[nk] = calls[nk];
+    const v = await liveOpen(LV.k0, calls[nk]);
+    if (v && v.n) { liveSetName(v.n); livePresence().then(() => liveReq('DELETE', LV.id, 'calls/' + nk).catch(() => {})); toast('The host saved your name as ' + v.n); }
+  }
   if (tree.board) {
     const e = sealEpoch(tree.board), key = await liveKeyFor(e, calls);
-    if (!key) { LV.noKey = true; renderMain(); ecgSync(); return; }
+    if (!key) { const was = LV.noKey; LV.noKey = true; if (!was) { renderMain(); ecgSync(); } return; }   // no redraw while waiting, so the emblem can be played with
     const snap = await liveOpen(key, tree.board);
     if (!snap) { if (!e) LV.bad = true; else LV.noKey = true; renderMain(); return; }
     LV.noKey = false; LV.hadAccess = true; LV.e = e;
@@ -394,7 +403,7 @@ async function liveViewerTree(tree, ok) {
     if (before) { const fresh = snap.in.filter(r => !before.has(r.c)).length; if (fresh) ecgEvents(fresh, 0); }
   }
   for (const k in calls) {
-    if (LV.rawCalls[k] === calls[k] || k.startsWith('p_') || k.startsWith('g_')) continue;
+    if (LV.rawCalls[k] === calls[k] || k.startsWith('p_') || k.startsWith('g_') || k.startsWith('n_')) continue;
     const key = LV.keys[sealEpoch(calls[k])]; if (!key) continue;
     const v = await liveOpen(key, calls[k]); if (!v) continue;
     LV.rawCalls[k] = calls[k];
@@ -442,7 +451,8 @@ function viewLive() {
   if (!LV.loaded) return msg('Opening the live board…', 'Connecting to the host\'s board.');
   if (LV.noKey) return LV.hadAccess
     ? msg('You no longer have access', 'The host has locked or changed who can watch this board. Ask them to let you in again.')
-    : msg('Waiting for the host to let you in', `This live board is locked. ${liveName() ? `The host sees <b>${esc(liveName())}</b> waiting` : 'Add your name below so the host knows it\'s you'}; it opens here as soon as they let you in.`);
+    : `<section class="card pad lv-wait"><div class="home-art">${arcArt()}</div>
+        <div class="empty" style="padding-top:4px"><b>Waiting for the host to let you in</b>This live board is locked. ${liveName() ? `The host sees <b>${esc(liveName())}</b> waiting` : 'Add your name below so the host knows it\'s you'}; the board opens here as soon as they let you in.<div class="lv-play">Meanwhile, tap the emblem. Or hold it.</div></div></section>${liveFoot()}`;
   const sn = LV.snap;
   if (!sn) return msg('This VC has ended', 'The live link stops working when the host ends the meeting.');
   const tabs = [['miss', 'Not joined', sn.missCount], ['left', 'Joined & left', sn.left.length], ['in', 'In meeting', sn.in.length]];
