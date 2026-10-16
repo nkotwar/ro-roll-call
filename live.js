@@ -454,7 +454,7 @@ function liveChip(code) {
 }
 function liveTop() {
   const sn = LV.snap, on = sn && !sn.ended && !LV.gone && !LV.noKey && !LV.left;
-  $('#top').innerHTML = `<button class="brand-btn" data-act="about" aria-label="About Hazri"><img class="brand-mark" src="icon-192.png" alt=""></button><h1 class="lv-title">Live board<span class="lv-via">via pdudairo</span></h1>`
+  $('#top').innerHTML = `<button class="brand-btn" data-act="about" aria-label="About Hazri"><img class="brand-mark" src="icon-192.png" alt=""></button><h1 class="lv-title">Hazri Live<span class="lv-via">via pdudairo</span></h1>`
     + (on && sn.uri ? `<a class="join-btn" href="${esc(sn.uri)}" target="_blank" rel="noopener" aria-label="Join the meeting">${I.video}Join</a>` : '')
     + (LV.left ? '' : `<button class="icon-btn" data-act="live-exit" aria-label="Stop watching">${I.x}</button>`);
   ecgSync();
