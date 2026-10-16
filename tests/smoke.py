@@ -185,7 +185,7 @@ def main():
         pg.click('[data-act="live-share"]'); pg.wait_for_timeout(400)
         pg.fill('#ln-name', 'Host Tester'); pg.click('#ln-ok'); pg.wait_for_timeout(1500)
         link = pg.evaluate('window.__rc.liveLink(window.__rc.S.session.live)')
-        check('share gives a link with the key after #', '#w=' in link and S('!!S.session.live'))
+        check('share gives a short /live/ link with the key after #', '/live/' in link and len(link.split('#')[1]) == 22 and S('!!S.session.live'))
         raw = json.dumps(store.tree)
         check('board reaches the relay encrypted (no names readable)', 'board' in raw and 'Alpha' not in raw and 'Purohit' not in raw)
         vctx = browser.new_context(viewport={'width': 360, 'height': 800}, has_touch=True, is_mobile=True)

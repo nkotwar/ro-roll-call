@@ -563,7 +563,7 @@ async function applyUpdate() {
   try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.unregister())); } catch (e) {}
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } catch (e) {}
   // GitHub Pages lets the browser keep files for ~10 minutes. Force fresh copies into the browser cache before reloading.
-  await Promise.all(['./', 'index.html', 'version.js', 'core.js', 'google.js', 'meeting.js', 'heartbeat.js', 'ui.js', 'sheets.js', 'views.js', 'live.js', 'actions.js', 'manifest.webmanifest', 'icon-192.png', 'cbi-emblem.png'].map(f => fetch(f, { cache: 'reload' }).catch(() => {})));
+  await Promise.all(['./', 'index.html', 'live/', 'version.js', 'styles.css', 'core.js', 'google.js', 'meeting.js', 'heartbeat.js', 'ui.js', 'sheets.js', 'views.js', 'live.js', 'actions.js', 'manifest.webmanifest', 'icon-192.png', 'cbi-emblem.png'].map(f => fetch(f, { cache: 'reload' }).catch(() => {})));
   try { sessionStorage.setItem('rc.tab', 'settings'); } catch (e) {}
   location.reload();
 }

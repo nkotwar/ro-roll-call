@@ -115,7 +115,7 @@ function liveDevice() {
 const LH = { cur: null, k0: null, kc: null, e: 0, keys: {}, names: {}, listener: null, tree: null, lastJson: '', lastSnap: null, hbT: 0, remote: {}, viewers: {}, granted: {}, watchers: 0, busy: false };
 function liveLink(l) {
   const local = LIVE_DB !== LIVE_HOME ? '?livedb=' + encodeURIComponent(LIVE_DB) : '';
-  return location.origin + location.pathname.replace(/index\.html$/, '') + local + '#' + l.key;
+  return location.origin + location.pathname.replace(/[^/]*$/, '') + 'live/' + local + '#' + l.key;
 }
 function liveSnap() {
   const s = S.session, b = board(); if (!s || !b) return null;
@@ -349,9 +349,9 @@ const LV = { id: '', k0: null, keys: {}, me: null, e: 0, snap: null, at: 0, call
 const lvStoreKey = () => 'hazri.lv.' + LV.id;
 function lvSave() { try { localStorage.setItem(lvStoreKey(), JSON.stringify({ vid: LV.me.vid, pub: LV.me.pub, priv: LV.me.priv, raw: LV.me.raw })); } catch (e) {} }
 async function liveBoot() {
-  document.documentElement.classList.add('viewer');
   const k = location.hash.slice(1);
   render();
+  if (!/^[\w-]{22}$/.test(k)) { LV.bad = true; render(); return; }
   try {
     LV.id = await liveIdOf(k); LV.k0 = await liveKey(k); LV.keys[0] = LV.k0;
     let me = null; try { me = JSON.parse(localStorage.getItem(lvStoreKey())); } catch (e) {}

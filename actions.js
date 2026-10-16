@@ -48,9 +48,6 @@ function summaryText() {
 if ('serviceWorker' in navigator && /^https:|^http:\/\/localhost/.test(location.href)) navigator.serviceWorker.register('sw.js').catch(() => {});
 if (!VIEWER) checkPersist().then(() => { if (U.tab === 'settings') renderMain(); });
 try { history.replaceState({ rc: 'root' }, ''); history.pushState({ rc: 'guard' }, ''); } catch (e) {}
-// A live link pasted into a tab that already shows Hazri only changes the #part, which doesn't reload
-// the page; reload so it opens in the right mode (and the other way round).
-addEventListener('hashchange', () => { if (VIEWER !== /^#[\w-]{22}$/.test(location.hash)) location.reload(); });
 if (VIEWER) liveBoot();
 else {
   render();

@@ -1,7 +1,11 @@
-/* Offline cache for Hazri. The release number comes from version.js (bump it there, nowhere else). */
+/* Offline cache for Hazri. The release number comes from version.js (bump it there, nowhere else).
+   The host app is served from the cache first (instant), refreshing it in the background.
+   The live-board page (live/) and everything it loads always come fresh from the network, so a viewer
+   never runs an old copy; the cache is only their fallback when offline. */
 importScripts('version.js');
 const VERSION = 'rollcall-v' + self.HAZRI_VERSION;
-const SHELL = ['./', 'index.html', 'version.js', 'core.js', 'google.js', 'meeting.js', 'heartbeat.js', 'ui.js', 'sheets.js', 'views.js', 'live.js', 'actions.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-192.png', 'cbi-emblem.png'];
+const SHELL = ['./', 'index.html', 'live/', 'version.js', 'styles.css', 'core.js', 'google.js', 'meeting.js', 'heartbeat.js', 'ui.js', 'sheets.js', 'views.js', 'live.js', 'actions.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png', 'icon-maskable-192.png', 'cbi-emblem.png'];
+const isLive = path => /\/live\/(index\.html)?$/.test(path);
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', e => {
@@ -9,9 +13,13 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return; // Google APIs always go to the network
   if (url.pathname.endsWith('/sw.js')) return;
   if (url.pathname.endsWith('/version.js') && url.searchParams.has('check')) return; // update check always asks the server
-  e.respondWith(caches.open(VERSION).then(async c => {
+  e.respondWith((async () => {
+    const c = await caches.open(VERSION);
+    const client = e.clientId ? await self.clients.get(e.clientId) : null;
+    const live = isLive(url.pathname) || (client && isLive(new URL(client.url).pathname));
     const hit = await c.match(e.request, { ignoreSearch: true });
-    const net = fetch(e.request, { cache: 'no-cache' }).then(r => { if (r.ok) c.put(e.request, r.clone()); return r; }).catch(() => hit);
-    return hit || net;
-  }));
+    const net = fetch(e.request, { cache: 'no-cache' }).then(r => { if (r.ok) c.put(e.request, r.clone()); return r; });
+    if (live) return net.catch(() => hit || Response.error());   // viewer: fresh first, cache only offline
+    return hit || net.catch(() => hit);
+  })());
 });
