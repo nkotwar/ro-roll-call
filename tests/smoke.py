@@ -127,6 +127,8 @@ def main():
         pg.click('[data-act="board-tab"][data-k="people"]'); pg.wait_for_timeout(200)
         pg.click('#board-list [data-act="tag"] >> nth=0'); pg.wait_for_timeout(400)
         check('demo tag sheet says tags are not saved', 'not saved' in pg.inner_text('.sheet'))
+        if pg.locator('.sheet .results > *').count() == 0:     # e.g. a phone caller: no suggestions, so search
+            pg.fill('#tag-q', 'a'); pg.wait_for_timeout(300)
         pg.locator('.sheet .results > *').first.click(); pg.wait_for_timeout(300)
         check('demo tagging does not touch saved tags', S('Object.keys(S.idents).length') == idents_before)
 

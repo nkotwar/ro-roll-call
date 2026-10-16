@@ -7,7 +7,7 @@ The app is public code on GitHub. **Staff data never goes to GitHub**: you load 
 ## 1. Put the app on GitHub Pages
 
 1. On github.com, click **+ → New repository**. Name it `ro-roll-call`, set it to **Public**, and click **Create repository**.
-2. Click **uploading an existing file**, then drag in every file from this folder: `index.html`, `version.js`, `app.js`, `sw.js`, `manifest.webmanifest`, `icon.svg`, `icon-192.png`, `icon-512.png`, `README.md`, `SETUP.md` and `.gitignore`. Click **Commit changes**.
+2. Click **uploading an existing file**, then drag in every file from this folder: `index.html`, `version.js`, the eight scripts (`core.js`, `google.js`, `meeting.js`, `heartbeat.js`, `ui.js`, `sheets.js`, `views.js`, `actions.js`), `sw.js`, `manifest.webmanifest`, `icon.svg`, `icon-192.png`, `icon-512.png`, `README.md`, `SETUP.md` and `.gitignore`. Click **Commit changes**.
    - Do **not** upload `udairo.js`, or any backup or mappings file.
    - `.gitignore` is hidden on some computers. If you can't see it, skip it; it only protects you when using git from a computer.
 3. In the repository, go to **Settings → Pages**. Under *Build and deployment*, set Source to **Deploy from a branch**, Branch to **main**, folder **/ (root)**, then **Save**.
