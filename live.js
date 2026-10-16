@@ -4,6 +4,9 @@
    and can join the calling round. Everything is encrypted on the host phone with AES-GCM; the key
    travels only in the link's #fragment, which browsers never send to any server, so Firebase stores
    nothing readable. The board is deleted from Firebase when the meeting ends.
+   Locking or removing a viewer moves the board to a fresh key. Every viewer's phone makes its own key
+   pair when it opens the link; the host hands the fresh key only to the viewers it keeps, sealed for
+   each of them, so the link alone no longer opens the board.
    Part of the app split into plain scripts that share one global scope; index.html loads them in order. */
 'use strict';
 
@@ -14,20 +17,34 @@ const LIVE_DB = (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && new URL
 const LIVE_HB_MS = 20e3;          // host "I'm alive" beat while sharing
 const LIVE_STALE_MS = 50e3;       // viewers warn after this long without a beat
 const LIVE_CLAIM_MS = 15 * 60e3;  // "X is calling…" turns into "Called" after this
+const LIVE_SEEN_MS = 75e3;        // a viewer counts as watching if heard from this recently
 const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
 const liveRand = n => b64u(crypto.getRandomValues(new Uint8Array(n)));
 async function liveKey(k) { return crypto.subtle.importKey('raw', unb64u(k), 'AES-GCM', false, ['encrypt', 'decrypt']); }
-async function liveSeal(key, obj) {
+// Sealed values look like "v1.<iv>.<data>" for the link's own key, or "e3.<iv>.<data>" for the 3rd fresh key.
+const sealEpoch = str => { const p = String(str).split('.')[0]; return p === 'v1' ? 0 : /^e\d+$/.test(p) ? +p.slice(1) : -1; };
+async function liveSeal(key, obj, e = 0) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(obj)));
-  return 'v1.' + b64u(iv) + '.' + b64u(ct);
+  return (e ? 'e' + e : 'v1') + '.' + b64u(iv) + '.' + b64u(ct);
 }
 async function liveOpen(key, str) {
   try {
-    const [v, iv, ct] = String(str).split('.'); if (v !== 'v1') return null;
+    const [, iv, ct] = String(str).split('.'); if (!key || sealEpoch(str) < 0) return null;
     return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64u(iv) }, key, unb64u(ct))));
   } catch (e) { return null; }   // wrong key or tampered: ignore
+}
+const EC = { name: 'ECDH', namedCurve: 'P-256' };
+async function livePair() {
+  const kp = await crypto.subtle.generateKey(EC, true, ['deriveKey']);
+  const pub = await crypto.subtle.exportKey('jwk', kp.publicKey), priv = await crypto.subtle.exportKey('jwk', kp.privateKey);
+  return { pub: { kty: pub.kty, crv: pub.crv, x: pub.x, y: pub.y }, priv: { kty: priv.kty, crv: priv.crv, x: priv.x, y: priv.y, d: priv.d } };
+}
+async function liveShared(priv, pub) {
+  const a = await crypto.subtle.importKey('jwk', priv, EC, false, ['deriveKey']);
+  const b = await crypto.subtle.importKey('jwk', pub, EC, false, []);
+  return crypto.subtle.deriveKey({ name: 'ECDH', public: b }, a, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 const livePath = (id, sub = '') => `${LIVE_DB}/live/${id}${sub ? '/' + sub : ''}.json`;
 async function liveReq(method, id, sub, body) {
@@ -77,21 +94,25 @@ function liveListen(id, sub, onTree) {
 }
 const liveName = () => { try { return localStorage.getItem('hazri.name') || ''; } catch (e) { return ''; } };
 const liveSetName = n => { try { localStorage.setItem('hazri.name', n); } catch (e) {} };
-function askLiveName(why) {
+function askLiveName(why, skip) {
   return new Promise(res => {
     let done = false; const fin = v => { if (!done) { done = true; res(v); } };
     openSheet(`<div class="sheet-head"><div class="grow"><h3>Your name</h3><div class="sub">${esc(why)}</div></div></div>
       <form class="sheet-body" id="ln-form"><input class="input" id="ln-name" value="${esc(liveName())}" placeholder="e.g. Ramesh, RO" autocomplete="name" maxlength="40" required></form>
-      <div class="sheet-foot"><button class="btn btn-ghost" style="flex:1" id="ln-no">Cancel</button><button class="btn btn-primary" style="flex:1" id="ln-ok">Save</button></div>`, { onClose: () => fin('') });
+      <div class="sheet-foot"><button class="btn btn-ghost" style="flex:1" id="ln-no">${skip ? 'Skip' : 'Cancel'}</button><button class="btn btn-primary" style="flex:1" id="ln-ok">Save</button></div>`, { onClose: () => fin('') });
     const ok = () => { const v = $('#ln-name').value.trim().slice(0, 40); if (!v) { $('#ln-name').focus(); return; } liveSetName(v); fin(v); closeSheet(); };
     $('#ln-ok').onclick = ok; $('#ln-form').onsubmit = e => { e.preventDefault(); ok(); }; $('#ln-no').onclick = () => closeSheet();
     setTimeout(() => $('#ln-name')?.focus(), 250);
   });
 }
 const claimLabel = c => c && c.status === 'calling' && now() - c.at > LIVE_CLAIM_MS ? 'called' : c && c.status;
+function liveDevice() {
+  const ua = navigator.userAgent || '';
+  return /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? (/Mobile/.test(ua) ? 'Android phone' : 'Android tablet') : /Windows/.test(ua) ? 'Windows PC' : /Macintosh/.test(ua) ? 'Mac' : /Linux/.test(ua) ? 'Linux PC' : 'Browser';
+}
 
 /* ───────────────────────── host side ───────────────────────── */
-const LH = { cur: null, key: null, listener: null, lastJson: '', lastSnap: null, hbT: 0, pubT: 0, remote: {}, watchers: 0, busy: false };
+const LH = { cur: null, k0: null, kc: null, e: 0, listener: null, tree: null, lastJson: '', lastSnap: null, hbT: 0, remote: {}, viewers: {}, granted: {}, watchers: 0, busy: false };
 function liveLink(l) {
   const local = LIVE_DB !== LIVE_HOME ? '?livedb=' + encodeURIComponent(LIVE_DB) : '';
   return location.origin + location.pathname.replace(/index\.html$/, '') + local + '#w=' + l.id + '.' + l.key;
@@ -107,10 +128,9 @@ function liveSnap() {
     return out;
   };
   const ppl = list => list.map(x => ({ n: x.t && x.t.p ? pretty(personById.get(x.t.p)?.name || x.p.name) : x.p.name, a: !!x.p.active }));
-  const ro = S.units.find(u => u.isRO);
   return {
-    v: 1, code: s.meetingCode, demo: s.source === 'demo', when: s.details.when || '', agenda: s.details.agenda || '', head: s.details.headedBy || '',
-    region: ro ? ro.name : '', ended: !!s.ended, state: s.state || '',
+    v: 1, code: s.meetingCode, uri: s.meetingUri || '', demo: s.source === 'demo', when: s.details.when || '', agenda: s.details.agenda || '', head: s.details.headedBy || '',
+    ended: !!s.ended, state: s.state || '',
     total: b.total, joined: b.joined, inCount: b.inCount, leftCount: b.leftCount, missCount: b.missCount,
     miss: b.rows.miss.map(r => ({ c: r.u.code, n: unitLabel(r.u), bm: bmOf(r.u) ? pretty(bmOf(r.u).name) : '', nums: nums(r.u) })),
     left: b.rows.left.map(r => ({ c: r.u.code, n: unitLabel(r.u), t: r.lastLeft, ppl: ppl(r.list), nums: nums(r.u) })),
@@ -131,13 +151,14 @@ async function liveReconcile() {
   finally { LH.busy = false; }
 }
 async function liveBegin(l) {
-  LH.cur = l; LH.key = await liveKey(l.key); LH.lastJson = ''; LH.remote = {};
+  LH.cur = l; LH.k0 = await liveKey(l.key); LH.e = l.e || 0; LH.kc = LH.e ? await liveKey(l.kc) : LH.k0;
+  LH.lastJson = ''; LH.remote = {}; LH.viewers = {}; LH.granted = {};
   LH.listener = liveListen(l.id, 'calls', tree => { LH.tree = tree; liveHostCalls(tree); });
   clearInterval(LH.hbT);
   LH.hbT = setInterval(() => {
     if (!LH.cur || document.hidden) return;
     const id = LH.cur.id;
-    liveSeal(LH.key, { at: now() }).then(v => liveReq('PUT', id, 'calls/_hb', v)).catch(() => {});
+    liveSeal(LH.kc, { at: now() }, LH.e).then(v => liveReq('PUT', id, 'calls/_hb', v)).catch(() => {});
     liveHostCalls(LH.tree);   // recount watchers as old ones go quiet
   }, LIVE_HB_MS);
   // Calls already made in this round go up too, so helpers see them.
@@ -148,16 +169,16 @@ async function livePush(force) {
   const json = JSON.stringify(snap);
   if (!force && json === LH.lastJson) return;
   LH.lastJson = json; LH.lastSnap = snap;
-  await liveReq('PUT', LH.cur.id, 'board', await liveSeal(LH.key, { ...snap, at: now() }));
+  await liveReq('PUT', LH.cur.id, 'board', await liveSeal(LH.kc, { ...snap, at: now() }, LH.e));
 }
 async function liveFinish() {
-  const cur = LH.cur, key = LH.key, snap = LH.lastSnap;
-  LH.cur = null; LH.key = null; clearInterval(LH.hbT);
+  const cur = LH.cur, key = LH.kc, e = LH.e, snap = LH.lastSnap;
+  LH.cur = null; LH.k0 = LH.kc = null; LH.viewers = {}; LH.watchers = 0; clearInterval(LH.hbT);
   if (LH.listener) { LH.listener.close(); LH.listener = null; }
   if (!cur) return;
   S.liveTrash = [...new Set([...(S.liveTrash || []), cur.id])]; save();
   // Watchers get the final board marked as ended, then the data is removed from Firebase.
-  try { if (snap && key) await liveReq('PUT', cur.id, 'board', await liveSeal(key, { ...snap, ended: true, at: now() })); } catch (e) {}
+  try { if (snap && key) await liveReq('PUT', cur.id, 'board', await liveSeal(key, { ...snap, ended: true, at: now() }, e)); } catch (e2) {}
   setTimeout(liveEmptyTrash, 4000);
 }
 async function liveEmptyTrash() {
@@ -167,35 +188,102 @@ async function liveEmptyTrash() {
   }
 }
 async function liveHostCalls(tree) {
-  if (!LH.key || !tree || typeof tree !== 'object') return;
-  let changed = false, watchers = 0;
+  if (!LH.cur || !tree || typeof tree !== 'object') { liveCount(); return; }
+  const l = LH.cur;
+  let changed = false;
   for (const k in tree) {
-    if (LH.remote[k] === tree[k]) { if (k.startsWith('p_') && LH.remote['@' + k] && now() - LH.remote['@' + k] < 75e3) watchers++; continue; }
+    if (LH.remote[k] === tree[k]) continue;
     LH.remote[k] = tree[k];
-    const v = await liveOpen(LH.key, tree[k]); if (!v) continue;
-    if (k.startsWith('p_')) { LH.remote['@' + k] = v.at; if (now() - v.at < 75e3) watchers++; continue; }
-    if (k === '_hb') continue;
+    if (k.startsWith('g_') || k === '_hb') continue;
+    if (k.startsWith('p_')) {          // a viewer saying hello (always sealed with the link's own key)
+      const v = await liveOpen(LH.k0, tree[k]); if (!v) continue;
+      const vid = k.slice(2), old = LH.viewers[vid];
+      LH.viewers[vid] = { n: v.n || '', dev: v.dev || '', at: v.at, pub: v.pub, first: old ? old.first : v.at };
+      changed = true; continue;
+    }
+    if (sealEpoch(tree[k]) !== LH.e) continue;   // written with an old key: someone who was removed
+    const v = await liveOpen(LH.kc, tree[k]); if (!v) continue;
     const code = +k, mine = S.calls[code];
     if (!code || (mine && mine.at >= v.at)) continue;
     S.calls[code] = { status: v.status, at: v.at, who: v.who || '', num: v.num || '', by: v.by || '' };
     changed = true;
   }
-  if (watchers !== LH.watchers) { LH.watchers = watchers; changed = true; }
-  if (changed) { save(); if (!$('#layer .sheet')) renderMain(); }
+  for (const vid in LH.viewers) if (!(('p_' + vid) in tree)) { delete LH.viewers[vid]; changed = true; }
+  await liveAdmit();
+  if (liveCount() || changed) { save(); if (!$('#layer .sheet')) renderMain(); }
+}
+const liveActive = v => v && now() - v.at < LIVE_SEEN_MS;
+function liveViewerList() {
+  const l = LH.cur; if (!l) return [];
+  return Object.entries(LH.viewers).filter(([vid, v]) => !(l.dropped || []).includes(vid) && liveActive(v))
+    .map(([vid, v]) => ({ vid, ...v, waiting: !!l.lock && !(l.admitted || {})[vid] }))
+    .sort((a, b) => a.waiting - b.waiting || a.first - b.first);
+}
+function liveCount() { const n = liveViewerList().filter(v => !v.waiting).length; if (n === LH.watchers) return false; LH.watchers = n; return true; }
+// With a fresh key in use, hand it to every viewer who is allowed in and doesn't have it yet.
+async function liveAdmit() {
+  const l = LH.cur; if (!l || !LH.e) return;
+  l.admitted = l.admitted || {};
+  for (const v of liveViewerList()) {
+    if (v.waiting || !v.pub || LH.granted[v.vid] === LH.e) continue;
+    if (!l.lock) l.admitted[v.vid] = true;
+    try {
+      const k = await liveSeal(await liveShared(l.hp, v.pub), { k: l.kc }, 0);
+      await liveReq('PUT', l.id, 'calls/g_' + v.vid, JSON.stringify({ p: l.hpub, e: LH.e, k }));
+      LH.granted[v.vid] = LH.e;
+    } catch (e) {}
+  }
+}
+// Move the board to a fresh key; everyone still allowed gets it, anyone else is shut out.
+async function liveRotate() {
+  const l = LH.cur; if (!l) return;
+  if (!l.hp) { const p = await livePair(); l.hp = p.priv; l.hpub = p.pub; }
+  l.e = (l.e || 0) + 1; l.kc = liveRand(32);
+  LH.e = l.e; LH.kc = await liveKey(l.kc); LH.granted = {}; LH.lastJson = '';
+  save();
+  await liveAdmit();
+  await livePush(true);
+  liveSeal(LH.kc, { at: now() }, LH.e).then(v => liveReq('PUT', l.id, 'calls/_hb', v)).catch(() => {});
+  for (const code in S.calls) livePushCall(+code);
+  for (const vid of l.dropped || []) liveReq('DELETE', l.id, 'calls/g_' + vid).catch(() => {});
+}
+async function liveSetLock(on) {
+  const l = LH.cur; if (!l) return;
+  if (on) {
+    l.admitted = l.admitted || {};
+    for (const v of liveViewerList()) l.admitted[v.vid] = true;   // everyone watching now stays in
+    l.lock = true;
+    if (!LH.e) await liveRotate(); else save();
+    toast('Locked. New people need your OK to watch.');
+  } else {
+    l.lock = false; save(); await liveAdmit();
+    toast('Unlocked. Anyone with the link can watch.');
+  }
+  liveCount(); renderMain();
+}
+async function liveLetIn(vid) { const l = LH.cur; if (!l) return; (l.admitted = l.admitted || {})[vid] = true; save(); await liveAdmit(); liveCount(); renderMain(); }
+async function liveDrop(vid) {
+  const l = LH.cur; if (!l) return;
+  const hadKey = !LH.e || (l.admitted || {})[vid] || LH.granted[vid];
+  l.dropped = [...new Set([...(l.dropped || []), vid])];
+  if (l.admitted) delete l.admitted[vid];
+  delete LH.viewers[vid];
+  if (hadKey) await liveRotate(); else save();   // someone still waiting never had the key: nothing to change
+  liveCount(); renderMain();
 }
 async function livePushCall(code) {
-  if (!LH.cur || !LH.key) return;
+  if (!LH.cur || !LH.kc) return;
   const c = S.calls[code];
   try {
     if (!c) await liveReq('DELETE', LH.cur.id, 'calls/' + code);
-    else await liveReq('PUT', LH.cur.id, 'calls/' + code, await liveSeal(LH.key, { status: c.status, at: c.at, who: c.who || '', num: c.num || '', by: c.by || liveName() || 'Host' }));
+    else await liveReq('PUT', LH.cur.id, 'calls/' + code, await liveSeal(LH.kc, { status: c.status, at: c.at, who: c.who || '', num: c.num || '', by: c.by || liveName() || 'Host' }, LH.e));
   } catch (e) {}
 }
 async function liveStartShare() {
   const s = S.session; if (!s) return;
   if (!s.live) {
     if (!liveName()) { const n = await askLiveName('Shown to others when you call a branch'); if (!n) return; }
-    s.live = { id: liveRand(16), key: liveRand(32), at: now() }; save();
+    s.live = { id: liveRand(16), key: liveRand(32), at: now(), e: 0, lock: false, admitted: {}, dropped: [] }; save();
   }
   try { await liveReconcile(); if (!LH.cur) throw new Error(); await livePush(true); }
   catch (e) { toast('Could not reach the live link service. Check the internet and try again.'); return; }
@@ -203,7 +291,7 @@ async function liveStartShare() {
 }
 function liveShareText() {
   const s = S.session, d = s.details;
-  return [`*Live VC attendance – ${S.units.find(u => u.isRO)?.name ? 'RO ' + S.units.find(u => u.isRO).name.replace(/^Regional Office,?\s*/i, '') : 'RO'}*`, d.when ? '🕚 ' + fmtWhen(d.when) : '', 'See who has joined and help call the rest:', liveLink(s.live)].filter(Boolean).join('\n');
+  return ['*Live VC attendance – RO Udaipur*', d.when ? '🕚 ' + fmtWhen(d.when) : '', 'See who has joined and help call the rest:', liveLink(s.live)].filter(Boolean).join('\n');
 }
 function liveSendLink() {
   const t = liveShareText();
@@ -214,63 +302,103 @@ async function liveStopShare() {
   if (!(await confirmSheet('Stop sharing the live board?', 'The link stops working for everyone who has it. You can share a new link any time.', 'Stop sharing', true))) return;
   delete s.live; save(); await liveReconcile(); renderMain(); toast('Live link stopped');
 }
+const viewerLabel = v => v.n || 'Guest · ' + (v.dev || 'Browser');
 function liveDeskCard() {
   const s = S.session, l = s.live;
   if (!l) return `<section class="card pad m-card">
     <div class="m-head"><div class="grow"><div class="m-title">Live link</div><div class="sub">Anyone you send it to sees this board live and can help call. No sign-in needed.</div></div>
       <button class="mini-btn primary" data-act="live-share">${I.share}Share live</button></div></section>`;
-  const w = LH.watchers;
+  const list = liveViewerList(), waiting = list.filter(v => v.waiting).length;
   return `<section class="card pad m-card">
-    <div class="m-head"><div class="grow"><div class="m-title"><span class="live-dot"></span>Live link on</div><div class="sub">${w ? `${w} watching now` : 'Nobody watching yet'}</div></div>
+    <div class="m-head"><div class="grow"><div class="m-title"><span class="live-dot"></span>Live link on</div><div class="sub">${LH.watchers ? `${LH.watchers} watching` : 'Nobody watching yet'}${waiting ? ` · ${waiting} waiting` : ''}</div></div>
       <div class="icon-row">
         <button class="mini-btn wa-solid" data-act="live-send">${I.share}Send</button>
         <button class="round-btn" data-act="live-copy" aria-label="Copy live link">${I.copy}</button>
         <button class="round-btn" data-act="live-stop" aria-label="Stop sharing">${I.stop}</button>
-      </div></div></section>`;
+      </div></div>
+    ${list.length ? `<div class="picks" id="live-viewers">${list.map(v => `<button type="button" class="pick viewer-pill ${v.waiting ? 'waiting' : ''}" data-act="live-viewer" data-vid="${esc(v.vid)}">${v.waiting ? I.clock : '<span class="vp-dot"></span>'}${esc(viewerLabel(v))}${v.waiting ? ' · waiting' : ''}</button>`).join('')}</div>` : ''}
+    <label class="setting" style="padding:0"><div class="grow"><div class="title">Lock the link</div><div class="sub">${l.lock ? 'New people wait until you let them in' : 'Anyone with the link can watch'}</div></div><span class="switch"><input type="checkbox" id="live-lock" ${l.lock ? 'checked' : ''}><span></span></span></label>
+  </section>`;
 }
-const liveBadge = () => S.session && S.session.live && !S.session.ended ? `<button class="live-line" data-act="go-share"><span class="live-dot"></span>Live link on · ${LH.watchers ? LH.watchers + ' watching' : 'nobody watching yet'}</button>` : '';
+function liveViewerSheet(vid) {
+  const v = liveViewerList().find(x => x.vid === vid); if (!v) return;
+  openSheet(`<div class="sheet-head"><div class="grow"><h3>${esc(viewerLabel(v))}</h3><div class="sub">${v.n ? esc(v.dev) + ' · ' : ''}${v.waiting ? 'Waiting to watch' : 'Watching'} · opened ${esc(fmtTime(v.first))}</div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
+    <div class="sheet-body">
+      ${v.waiting ? `<button class="btn btn-primary btn-block" id="lv-in">${I.check}Let in</button>` : ''}
+      <button class="btn btn-danger btn-block" id="lv-out">${I.x}${v.waiting ? 'Keep out' : 'Remove from live board'}</button>
+      <p class="hint" style="margin:0">${v.waiting ? 'They can see nothing until you let them in.' : 'Their screen stops updating straight away and the link no longer opens the board for them.'}</p>
+    </div>`);
+  if ($('#lv-in')) $('#lv-in').onclick = () => { closeSheet(); liveLetIn(vid); toast(viewerLabel(v) + ' can watch now'); };
+  $('#lv-out').onclick = () => { closeSheet(); liveDrop(vid); toast(viewerLabel(v) + ' removed'); };
+}
+const liveBadge = () => S.session && S.session.live && !S.session.ended ? `<button class="live-line" data-act="go-share"><span class="live-dot"></span>Live link on · ${LH.watchers ? LH.watchers + ' watching' : 'nobody watching yet'}${liveViewerList().some(v => v.waiting) ? ' · someone waiting' : ''}</button>` : '';
 
 /* ───────────────────────── viewer side ───────────────────────── */
-const LV = { id: '', k: '', key: null, snap: null, at: 0, hb: 0, calls: {}, rawCalls: {}, gone: false, bad: false, online: true, tab: 'miss', pending: null, vid: '', presT: 0, listener: null, loaded: false };
-function liveBoot() {
+const LV = { id: '', k0: null, keys: {}, me: null, e: 0, snap: null, at: 0, calls: {}, rawCalls: {}, gone: false, bad: false, online: true, tab: 'miss', pending: null, presT: 0, listener: null, loaded: false, noKey: false, hadAccess: false, left: false };
+const lvStoreKey = () => 'hazri.lv.' + LV.id;
+function lvSave() { try { localStorage.setItem(lvStoreKey(), JSON.stringify({ vid: LV.me.vid, pub: LV.me.pub, priv: LV.me.priv, raw: LV.me.raw })); } catch (e) {} }
+async function liveBoot() {
   document.documentElement.classList.add('viewer');
   const m = location.hash.match(/^#w=([\w-]{22})\.([\w-]{43})$/);
-  LV.id = m[1]; LV.k = m[2];
-  try { LV.vid = sessionStorage.getItem('hazri.vid') || liveRand(9); sessionStorage.setItem('hazri.vid', LV.vid); } catch (e) { LV.vid = liveRand(9); }
+  LV.id = m[1];
   render();
-  liveKey(LV.k).then(key => {
-    LV.key = key;
-    LV.listener = liveListen(LV.id, '', (tree, ok) => liveViewerTree(tree, ok));
-    livePresence(); LV.presT = setInterval(livePresence, 30e3);
-  }).catch(() => { LV.bad = true; render(); });
+  try {
+    LV.k0 = await liveKey(m[2]); LV.keys[0] = LV.k0;
+    let me = null; try { me = JSON.parse(localStorage.getItem(lvStoreKey())); } catch (e) {}
+    if (!me || !me.priv) me = { vid: liveRand(9), ...(await livePair()), raw: {} };
+    LV.me = me; lvSave();
+    for (const e in me.raw || {}) LV.keys[e] = await liveKey(me.raw[e]);
+  } catch (e) { LV.bad = true; render(); return; }
+  LV.listener = liveListen(LV.id, '', (tree, ok) => liveViewerTree(tree, ok));
+  livePresence(); LV.presT = setInterval(livePresence, 30e3);
   setInterval(() => { if (LV.snap) { const tx = $('#lv-fresh'); if (tx) tx.outerHTML = liveFreshLine(); } }, 5000);
+  let skipped = false; try { skipped = sessionStorage.getItem('hazri.skipname') === '1'; } catch (e) {}
+  if (!liveName() && !skipped) setTimeout(async () => {
+    const n = await askLiveName('So the host can see who is watching', true);
+    if (!n) try { sessionStorage.setItem('hazri.skipname', '1'); } catch (e) {}
+    livePresence(); renderMain();
+  }, 700);
 }
 async function livePresence() {
-  if (!LV.key || document.hidden || LV.gone) return;
-  try { await liveReq('PUT', LV.id, 'calls/p_' + LV.vid, await liveSeal(LV.key, { at: now(), n: liveName() })); } catch (e) {}
+  if (!LV.k0 || !LV.me || document.hidden || LV.gone || LV.left) return;
+  try { await liveReq('PUT', LV.id, 'calls/p_' + LV.me.vid, await liveSeal(LV.k0, { at: now(), n: liveName(), dev: liveDevice(), pub: LV.me.pub })); } catch (e) {}
+}
+// The key for a given round: the link's own, one we already hold, or one the host sealed for this phone.
+async function liveKeyFor(e, calls) {
+  if (LV.keys[e]) return LV.keys[e];
+  const g = calls && calls['g_' + LV.me.vid]; if (!g) return null;
+  try {
+    const grant = JSON.parse(g); if (grant.e !== e) return null;
+    const v = await liveOpen(await liveShared(LV.me.priv, grant.p), grant.k); if (!v || !v.k) return null;
+    LV.keys[e] = await liveKey(v.k); LV.me.raw = { ...(LV.me.raw || {}), [e]: v.k }; lvSave();
+    return LV.keys[e];
+  } catch (err) { return null; }
 }
 async function liveViewerTree(tree, ok) {
+  if (LV.left) return;
   LV.online = ok;
   if (!ok && LV.loaded) { renderMain(); return; }
   if (tree === undefined) return;
   LV.loaded = true;
   if (tree == null) { LV.gone = true; if (LV.snap) LV.snap.ended = true; renderMain(); ecgSync(); return; }
   LV.gone = false;
-  if (tree.board) {
-    const snap = await liveOpen(LV.key, tree.board);
-    if (!snap) { LV.bad = true; renderMain(); return; }
-    const before = LV.snap ? new Set(LV.snap.in.map(r => r.c)) : null;
-    const firstLoad = !LV.snap;
-    LV.snap = snap; LV.at = Math.max(LV.at, snap.at || 0);
-    if (!firstLoad && before) { const fresh = snap.in.filter(r => !before.has(r.c)).length; if (fresh) ecgEvents(fresh, 0); }
-  }
   const calls = tree.calls || {};
+  if (tree.board) {
+    const e = sealEpoch(tree.board), key = await liveKeyFor(e, calls);
+    if (!key) { LV.noKey = true; renderMain(); ecgSync(); return; }
+    const snap = await liveOpen(key, tree.board);
+    if (!snap) { if (!e) LV.bad = true; else LV.noKey = true; renderMain(); return; }
+    LV.noKey = false; LV.hadAccess = true; LV.e = e;
+    const before = LV.snap ? new Set(LV.snap.in.map(r => r.c)) : null;
+    LV.snap = snap; LV.at = Math.max(LV.at, snap.at || 0);
+    if (before) { const fresh = snap.in.filter(r => !before.has(r.c)).length; if (fresh) ecgEvents(fresh, 0); }
+  }
   for (const k in calls) {
-    if (LV.rawCalls[k] === calls[k]) continue;
+    if (LV.rawCalls[k] === calls[k] || k.startsWith('p_') || k.startsWith('g_')) continue;
+    const key = LV.keys[sealEpoch(calls[k])]; if (!key) continue;
+    const v = await liveOpen(key, calls[k]); if (!v) continue;
     LV.rawCalls[k] = calls[k];
-    const v = await liveOpen(LV.key, calls[k]); if (!v) continue;
     if (k === '_hb') { LV.at = Math.max(LV.at, v.at); continue; }
-    if (k.startsWith('p_')) continue;
     LV.calls[+k] = v;
   }
   for (const k in LV.calls) if (!(k in calls)) delete LV.calls[k];
@@ -280,7 +408,7 @@ async function liveViewerTree(tree, ok) {
 }
 function liveEcgState() {
   const sn = LV.snap;
-  if (!sn || sn.ended || LV.gone) return { mode: 'off', n: 0 };
+  if (!sn || sn.ended || LV.gone || LV.noKey || LV.left) return { mode: 'off', n: 0 };
   if (now() - LV.at > LIVE_STALE_MS || !LV.online) return { mode: 'stale', n: 0 };
   const n = sn.in.reduce((a, r) => a + r.ppl.filter(p => p.a).length, 0);
   return { mode: n ? 'live' : 'faint', n };
@@ -298,14 +426,25 @@ function liveChip(code) {
   const txt = st === 'calling' ? `${esc(c.by || 'Someone')} is calling…` : `${meta.label}${c.by ? ' · ' + esc(c.by) : ''} · ${ago(c.at)}`;
   return `<div style="margin-top:4px"><span class="chip ${meta.cls}">${txt}</span></div>`;
 }
-function liveDial(code, who, num) { return `href="tel:${tel(num)}" data-act="dial" data-code="${code}" data-who="${esc(who)}" data-num="${esc(num)}"`; }
-function viewLive() {
-  $('#top').innerHTML = `<span class="brand-btn" aria-hidden="true"><img class="brand-mark" src="icon-192.png" alt=""></span><h1>Live board</h1>${LV.snap && !LV.snap.ended && !LV.gone ? '<span class="live-pill"><span class="live-dot"></span>Live</span>' : ''}`;
+function liveTop() {
+  const sn = LV.snap, on = sn && !sn.ended && !LV.gone && !LV.noKey && !LV.left;
+  $('#top').innerHTML = `<button class="brand-btn" data-act="about" aria-label="About Hazri"><img class="brand-mark" src="icon-192.png" alt=""></button><h1 class="lv-title">Live board<span class="lv-via">via pdudairo</span></h1>`
+    + (on && sn.uri ? `<a class="join-btn" href="${esc(sn.uri)}" target="_blank" rel="noopener" aria-label="Join the meeting">${I.video}Join</a>` : '')
+    + (LV.left ? '' : `<button class="icon-btn" data-act="live-exit" aria-label="Stop watching">${I.x}</button>`);
   ecgSync();
-  if (LV.bad) return `<section class="card pad"><div class="empty"><b>This link is incomplete</b>Part of it may have been cut off while copying. Ask the host to send it again.</div></section>`;
-  if (!LV.loaded) return `<section class="card pad"><div class="empty"><b>Opening the live board…</b>Connecting to the host's board.</div></section>`;
+}
+const liveFoot = () => `<p class="hint lv-foot">Shared from Hazri${liveName() ? ` · you are <button class="btn-link" data-act="live-rename">${esc(liveName())}</button>` : ` · <button class="btn-link" data-act="live-rename">add your name</button>`}. Numbers are for this VC only.<span class="lv-credit">Built by Nitin Kotwar (139535)</span></p>`;
+function viewLive() {
+  liveTop();
+  const msg = (t, b, extra = '') => `<section class="card pad"><div class="empty"><b>${t}</b>${b}${extra}</div></section>${liveFoot()}`;
+  if (LV.left) return msg('You stopped watching', 'Nothing more is sent to or from this phone.', `<div style="margin-top:14px"><button class="btn btn-soft" data-act="live-rejoin">Watch again</button></div>`);
+  if (LV.bad) return msg('This link is incomplete', 'Part of it may have been cut off while copying. Ask the host to send it again.');
+  if (!LV.loaded) return msg('Opening the live board…', 'Connecting to the host\'s board.');
+  if (LV.noKey) return LV.hadAccess
+    ? msg('You no longer have access', 'The host has locked or changed who can watch this board. Ask them to let you in again.')
+    : msg('Waiting for the host to let you in', `This live board is locked. ${liveName() ? `The host sees <b>${esc(liveName())}</b> waiting` : 'Add your name below so the host knows it\'s you'}; it opens here as soon as they let you in.`);
   const sn = LV.snap;
-  if (!sn) return `<section class="card pad"><div class="empty"><b>This VC has ended</b>The live link stops working when the host ends the meeting.</div></section>`;
+  if (!sn) return msg('This VC has ended', 'The live link stops working when the host ends the meeting.');
   const tabs = [['miss', 'Not joined', sn.missCount], ['left', 'Joined & left', sn.left.length], ['in', 'In meeting', sn.in.length]];
   let list = '';
   const canCall = !sn.ended;
@@ -315,7 +454,7 @@ function viewLive() {
       return `<div class="item"><span class="stripe miss"></span><div class="grow"><div class="row" style="gap:8px"><span class="code">${r.c}</span><span class="title ellipsis">${esc(r.n)}</span></div>
         <div class="sub ellipsis">${r.bm ? esc(r.bm) : 'No staff listed'}</div>${liveChip(r.c)}</div>
         ${r.nums.length ? `<button class="icon-btn" data-act="live-nums" data-code="${r.c}" aria-label="More numbers for ${esc(r.n)}">${I.more}</button>` : ''}
-        ${canCall && first ? `<a class="call-btn" ${liveDial(r.c, first[0], first[1])}>${I.phone}Call</a>` : ''}</div>`;
+        ${canCall && first ? `<a class="call-btn" ${dial(r.c, first[0], first[1])}>${I.phone}Call</a>` : ''}</div>`;
     }).join('') : `<div class="empty"><b>Everyone expected has joined</b>All ${sn.total} branches have been in the meeting.</div>`;
   } else if (LV.tab === 'left') {
     list = sn.left.length ? sn.left.map(r => `<div class="item"><span class="stripe left"></span><div class="grow"><div class="row" style="gap:8px"><span class="code">${r.c}</span><span class="title ellipsis">${esc(r.n)}</span></div>
@@ -343,7 +482,7 @@ function viewLive() {
   </section>
   <div class="board-tabs"><div class="seg" role="tablist">${tabs.map(([k, l, n]) => `<button role="tab" aria-pressed="${LV.tab === k}" data-act="live-tab" data-k="${k}">${l} <span class="mono" style="opacity:.7">${n}</span></button>`).join('')}</div></div>
   <section class="card list" id="board-list">${list}</section>
-  <p class="hint" style="text-align:center;margin:6px 0 0">Shared from Hazri${liveName() ? ` · you are <button class="btn-link" data-act="live-rename">${esc(liveName())}</button>` : ''}. Numbers are for this VC only.</p>`;
+  ${liveFoot()}`;
 }
 function liveFind(code) { const sn = LV.snap; return sn && (sn.miss.find(r => r.c === code) || sn.left.find(r => r.c === code)); }
 function liveNumsSheet(code) {
@@ -351,17 +490,17 @@ function liveNumsSheet(code) {
   openSheet(`
     <div class="sheet-head"><span class="code" style="margin-top:3px">${r.c}</span><div class="grow"><h3>${esc(r.n)}</h3><div class="sub">${LV.calls[code] ? liveChip(code).replace(/<\/?div[^>]*>/g, '') : 'Not called yet'}</div></div><button class="icon-btn" data-act="sheet-close" aria-label="Close">${I.x}</button></div>
     <div class="sheet-body">
-      <div class="list card" style="box-shadow:none;border:1px solid var(--line)">${r.nums.map(([l, n, sub]) => `<div class="item"><div class="grow"><div class="title ellipsis">${esc(l)}</div><div class="sub"><span class="mono">${esc(n)}</span>${sub ? ' · ' + esc(sub) : ''}</div></div><button class="icon-btn" data-act="copy" data-v="${esc(n)}" aria-label="Copy number">${I.copy}</button>${LV.snap.ended ? '' : `<a class="call-btn" ${liveDial(r.c, l, n)}>${I.phone}Call</a>`}</div>`).join('')}</div>
+      <div class="list card" style="box-shadow:none;border:1px solid var(--line)">${r.nums.map(([l, n, sub]) => `<div class="item"><div class="grow"><div class="title ellipsis">${esc(l)}</div><div class="sub"><span class="mono">${esc(n)}</span>${sub ? ' · ' + esc(sub) : ''}</div></div><button class="icon-btn" data-act="copy" data-v="${esc(n)}" aria-label="Copy number">${I.copy}</button>${LV.snap.ended ? '' : `<a class="call-btn" ${dial(r.c, l, n)}>${I.phone}Call</a>`}</div>`).join('')}</div>
       ${LV.snap.ended ? '' : `<div class="flabel">Call status</div>${statusPicker(r.c)}`}
     </div>`);
 }
 async function liveSetCall(code, status, extra = {}) {
-  const prev = LV.calls[code];
+  const prev = LV.calls[code], key = LV.keys[LV.e];
   const v = { status, at: now(), who: extra.who || (prev && prev.who) || '', num: extra.num || (prev && prev.num) || '', by: liveName() };
   LV.calls[code] = v;
   if (LV.pending && LV.pending.code === code && status !== 'calling') LV.pending = null;
   renderMain();
-  try { await liveReq('PUT', LV.id, 'calls/' + code, await liveSeal(LV.key, v)); }
+  try { await liveReq('PUT', LV.id, 'calls/' + code, await liveSeal(key, v, LV.e)); }
   catch (e) { toast('Could not share that. Check the internet.'); }
 }
 async function liveStartCall(el, e) {
@@ -370,6 +509,7 @@ async function liveStartCall(el, e) {
     e.preventDefault();
     const n = await askLiveName('So others see who is calling which branch');
     if (!n) return;
+    livePresence();
     location.href = el.getAttribute('href');
   }
   if ($('#layer .sheet')) closeSheet(true);
@@ -389,10 +529,18 @@ function liveFeedback() {
     </div>`, { onClose: () => { if (LV.pending && LV.pending.code === pc.code) liveSetCall(pc.code, 'called', pc); } });
 }
 function liveVisible() {
+  if (LV.left) return;
   if (document.hidden) { if (LV.pending) LV.pending.away = true; return; }
   if (LV.pending && LV.pending.away) { LV.pending.away = false; setTimeout(liveFeedback, 350); }
   livePresence();
   if (LV.listener) LV.listener.refresh();
+}
+async function liveExit() {
+  if (!(await confirmSheet('Stop watching?', 'The board stops updating on this phone and the host sees you have left. You can open the link again any time.', 'Stop watching'))) return;
+  LV.left = true; clearInterval(LV.presT);
+  if (LV.listener) { LV.listener.close(); LV.listener = null; }
+  try { await liveReq('DELETE', LV.id, 'calls/p_' + LV.me.vid); } catch (e) {}
+  renderMain();
 }
 
 Object.assign(ACT, {
@@ -400,8 +548,12 @@ Object.assign(ACT, {
   'live-send': () => liveSendLink(),
   'live-copy': () => copyText(liveLink(S.session.live), 'Live link copied'),
   'live-stop': () => liveStopShare(),
+  'live-viewer': el => liveViewerSheet(el.dataset.vid),
   'live-tab': el => { LV.tab = el.dataset.k; renderMain(); },
   'live-nums': el => liveNumsSheet(+el.dataset.code),
-  'live-rename': () => askLiveName('Shown to others when you call a branch').then(() => renderMain())
+  'live-rename': () => askLiveName('Shown to the host and to others when you call a branch').then(() => { livePresence(); renderMain(); }),
+  'live-exit': () => liveExit(),
+  'live-rejoin': () => location.reload()
 });
+document.addEventListener('change', e => { if (e.target.id === 'live-lock') liveSetLock(e.target.checked); });
 if (!VIEWER) setTimeout(() => { liveEmptyTrash(); livePublishSoon(); }, 1500);

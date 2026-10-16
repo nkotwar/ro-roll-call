@@ -45,7 +45,7 @@ function renderTop(title, { back = false, actions = '' } = {}) {
 }
 function renderMain() {
   const m = $('#main');
-  if (VIEWER) { m.innerHTML = viewLive(); afterRender(); return; }
+  if (VIEWER && !(U.route && U.route.name === 'about')) { m.innerHTML = viewLive(); afterRender(); return; }
   const r = U.route;
   let html = '';
   if (r && r.name === 'create') html = viewCreate();
