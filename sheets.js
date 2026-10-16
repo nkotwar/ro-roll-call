@@ -561,7 +561,7 @@ const ACT = {
   'to-board': () => { leaveRoute(); U.tab = 'meet'; render(); window.scrollTo(0, 0); },
   'go-share': () => go({ name: 'share' }),
   'board-tab': el => { U.boardTab = el.dataset.k; renderMain(); },
-  reconnect: async () => { try { await G.getToken(true); S.session && (S.session.error = null); syncNow(); } catch (e) { toast(e.message); } },
+  reconnect: async () => { try { await G.getToken(true); if (S.session) S.session.error = null; save(); renderMain(); toast('Reconnected to Google'); syncNow(); } catch (e) { toast(e.message); } },   // clear the warning the moment sign-in succeeds
   tag: el => openTag(el.dataset.key, el.dataset.mode),
   assign: el => {
     const sh = $('.sheet'); const key = sh.dataset.key;
