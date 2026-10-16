@@ -1,7 +1,7 @@
 """
 A tiny local stand-in for the Firebase Realtime Database REST API, used only by tests/smoke.py.
 Speaks the same requests Hazri uses (GET, PUT, DELETE, streaming GET) and enforces the same rules
-as the real database (only /live/<22+ char id>/board and /live/<id>/calls/<key>, strings with size caps).
+as the real database (/live/<id>/pub/board, /live/<id>/pub/calls/<key>, /live/<id>/seen/<viewer>; strings with size caps).
 """
 import json, re, threading, http.server, socketserver
 
@@ -41,9 +41,13 @@ class Store:
 
 def allowed(parts, method, val):
     if len(parts) < 2 or parts[0] != 'live' or len(parts[1]) < 22: return False
-    if method in ('GET', 'DELETE'): return len(parts) in (2, 3, 4)
-    if len(parts) == 3 and parts[2] == 'board': return isinstance(val, str) and len(val) < 150000
-    if len(parts) == 4 and parts[2] == 'calls': return isinstance(val, str) and len(val) < 3000
+    rest = parts[2:]
+    if method == 'DELETE': return True
+    if method == 'GET': return len(rest) >= 1 and rest[0] in ('pub', 'seen')
+    ok_str = lambda n: isinstance(val, str) and len(val) < n
+    if rest == ['pub', 'board']: return ok_str(150000)
+    if len(rest) == 3 and rest[:2] == ['pub', 'calls']: return ok_str(3000)
+    if len(rest) == 2 and rest[0] == 'seen': return ok_str(3000)
     return False
 
 def make(store):

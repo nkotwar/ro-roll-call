@@ -66,10 +66,17 @@ and never reaches Firebase. The database address is in `live.js` (`LIVE_HOME`). 
     ".write": false,
     "live": {
       "$id": {
-        ".read": "$id.length >= 22",
         ".write": "$id.length >= 22",
-        "board": { ".validate": "newData.isString() && newData.val().length < 150000" },
-        "calls": { "$c": { ".validate": "newData.isString() && newData.val().length < 3000" } },
+        "pub": {
+          ".read": "$id.length >= 22",
+          "board": { ".validate": "newData.isString() && newData.val().length < 150000" },
+          "calls": { "$c": { ".validate": "newData.isString() && newData.val().length < 3000" } },
+          "$other": { ".validate": false }
+        },
+        "seen": {
+          ".read": "$id.length >= 22",
+          "$v": { ".validate": "newData.isString() && newData.val().length < 3000" }
+        },
         "$other": { ".validate": false }
       }
     }

@@ -154,13 +154,16 @@ async function liveBegin(l) {
   LH.cur = l; LH.k0 = await liveKey(l.key); LH.e = l.e || 0; LH.kc = LH.e ? await liveKey(l.kc) : LH.k0;
   LH.keys = { 0: LH.k0 }; for (const e in l.old || {}) LH.keys[e] = await liveKey(l.old[e]); LH.keys[LH.e] = LH.kc;
   LH.lastJson = ''; LH.remote = {}; LH.viewers = {}; LH.granted = {};
-  LH.listener = liveListen(l.id, 'calls', tree => { LH.tree = tree; liveHostCalls(tree); });
+  // Two streams, both only on this phone: call statuses (shared with viewers) and viewers' "still here"
+  // signals (seen only by the host, so viewers never receive each other's).
+  LH.listener = liveListen(l.id, 'pub/calls', tree => liveHostCalls(tree));
+  LH.seenL = liveListen(l.id, 'seen', tree => { LH.seen = tree; liveHostSeen(tree); });
   clearInterval(LH.hbT);
   LH.hbT = setInterval(() => {
     if (!LH.cur || document.hidden) return;
     const id = LH.cur.id;
-    liveSeal(LH.kc, { at: now() }, LH.e).then(v => liveReq('PUT', id, 'calls/_hb', v)).catch(() => {});
-    liveHostCalls(LH.tree);   // recount watchers as old ones go quiet
+    liveSeal(LH.kc, { at: now() }, LH.e).then(v => liveReq('PUT', id, 'pub/calls/_hb', v)).catch(() => {});
+    liveHostSeen(LH.seen);   // recount watchers as old ones go quiet
   }, LIVE_HB_MS);
   // Calls already made in this round go up too, so helpers see them.
   for (const code in S.calls) livePushCall(+code);
@@ -170,16 +173,17 @@ async function livePush(force) {
   const json = JSON.stringify(snap);
   if (!force && json === LH.lastJson) return;
   LH.lastJson = json; LH.lastSnap = snap;
-  await liveReq('PUT', LH.cur.id, 'board', await liveSeal(LH.kc, { ...snap, at: now() }, LH.e));
+  await liveReq('PUT', LH.cur.id, 'pub/board', await liveSeal(LH.kc, { ...snap, at: now() }, LH.e));
 }
 async function liveFinish() {
   const cur = LH.cur, key = LH.kc, e = LH.e, snap = LH.lastSnap;
   LH.cur = null; LH.k0 = LH.kc = null; LH.viewers = {}; LH.watchers = 0; clearInterval(LH.hbT);
   if (LH.listener) { LH.listener.close(); LH.listener = null; }
+  if (LH.seenL) { LH.seenL.close(); LH.seenL = null; }
   if (!cur) return;
   S.liveTrash = [...new Set([...(S.liveTrash || []), cur.id])]; save();
   // Watchers get the final board marked as ended, then the data is removed from Firebase.
-  try { if (snap && key) await liveReq('PUT', cur.id, 'board', await liveSeal(key, { ...snap, ended: true, at: now() }, e)); } catch (e2) {}
+  try { if (snap && key) await liveReq('PUT', cur.id, 'pub/board', await liveSeal(key, { ...snap, ended: true, at: now() }, e)); } catch (e2) {}
   setTimeout(liveEmptyTrash, 4000);
 }
 async function liveEmptyTrash() {
@@ -189,29 +193,37 @@ async function liveEmptyTrash() {
   }
 }
 async function liveHostCalls(tree) {
-  if (!LH.cur || !tree || typeof tree !== 'object') { liveCount(); return; }
-  const l = LH.cur;
+  if (!LH.cur || !tree || typeof tree !== 'object') return;
   let changed = false;
   for (const k in tree) {
     if (LH.remote[k] === tree[k]) continue;
     LH.remote[k] = tree[k];
     if (k.startsWith('g_') || k.startsWith('n_') || k === '_hb') continue;
-    if (k.startsWith('p_')) {          // a viewer saying hello (always sealed with the link's own key)
-      const v = await liveOpen(LH.k0, tree[k]); if (!v) continue;
-      const vid = k.slice(2), old = LH.viewers[vid];
-      if (v.n && LH.names[vid] === v.n) delete LH.names[vid];   // the name we gave them has reached their phone
-      LH.viewers[vid] = { n: LH.names[vid] || v.n || '', dev: v.dev || '', at: v.at, pub: v.pub, first: old ? old.first : v.at };
-      changed = true; continue;
-    }
     const v = await liveOpen(LH.keys[sealEpoch(tree[k])], tree[k]); if (!v) continue;   // older keys too: a call finished after its caller was removed still counts
     const code = +k, mine = S.calls[code];
     if (!code || (mine && mine.at >= v.at)) continue;
     S.calls[code] = { status: v.status, at: v.at, who: v.who || '', num: v.num || '', by: v.by || '' };
     changed = true;
   }
-  for (const vid in LH.viewers) if (!(('p_' + vid) in tree)) { delete LH.viewers[vid]; changed = true; }
+  if (changed) { save(); if (!$('#layer .sheet')) renderMain(); }
+}
+// Viewers' "still here" signals (sealed with the link's own key). Redraw only when the list itself changes.
+async function liveHostSeen(tree) {
+  if (!LH.cur) return;
+  tree = tree && typeof tree === 'object' ? tree : {};
+  const before = JSON.stringify(liveViewerList().map(v => [v.vid, v.n, v.dev, v.waiting]));
+  for (const vid in tree) {
+    if (LH.remote['s_' + vid] === tree[vid]) continue;
+    LH.remote['s_' + vid] = tree[vid];
+    const v = await liveOpen(LH.k0, tree[vid]); if (!v) continue;
+    const old = LH.viewers[vid];
+    if (v.n && LH.names[vid] === v.n) delete LH.names[vid];   // the name we gave them has reached their phone
+    LH.viewers[vid] = { n: LH.names[vid] || v.n || '', dev: v.dev || '', at: v.at, pub: v.pub, first: old ? old.first : v.at };
+  }
+  for (const vid in LH.viewers) if (!(vid in tree)) delete LH.viewers[vid];
   await liveAdmit();
-  if (liveCount() || changed) { save(); if (!$('#layer .sheet')) renderMain(); }
+  const after = JSON.stringify(liveViewerList().map(v => [v.vid, v.n, v.dev, v.waiting]));
+  if (liveCount() || before !== after) { save(); if (!$('#layer .sheet')) renderMain(); }
 }
 const liveActive = v => v && now() - v.at < LIVE_SEEN_MS;
 function liveViewerList() {
@@ -230,7 +242,7 @@ async function liveAdmit() {
     if (!l.lock) l.admitted[v.vid] = true;
     try {
       const k = await liveSeal(await liveShared(l.hp, v.pub), { k: l.kc }, 0);
-      await liveReq('PUT', l.id, 'calls/g_' + v.vid, JSON.stringify({ p: l.hpub, e: LH.e, k }));
+      await liveReq('PUT', l.id, 'pub/calls/g_' + v.vid, JSON.stringify({ p: l.hpub, e: LH.e, k }));
       LH.granted[v.vid] = LH.e;
     } catch (e) {}
   }
@@ -245,9 +257,9 @@ async function liveRotate() {
   save();
   await liveAdmit();
   await livePush(true);
-  liveSeal(LH.kc, { at: now() }, LH.e).then(v => liveReq('PUT', l.id, 'calls/_hb', v)).catch(() => {});
+  liveSeal(LH.kc, { at: now() }, LH.e).then(v => liveReq('PUT', l.id, 'pub/calls/_hb', v)).catch(() => {});
   for (const code in S.calls) livePushCall(+code);
-  for (const vid of l.dropped || []) liveReq('DELETE', l.id, 'calls/g_' + vid).catch(() => {});
+  for (const vid of l.dropped || []) liveReq('DELETE', l.id, 'pub/calls/g_' + vid).catch(() => {});
 }
 async function liveSetLock(on) {
   const l = LH.cur; if (!l) return;
@@ -275,14 +287,14 @@ async function liveDrop(vid) {
 async function liveRenameViewer(vid, n) {
   const l = LH.cur, v = LH.viewers[vid]; if (!l || !v) return;
   LH.names[vid] = n; v.n = n; renderMain();
-  try { await liveReq('PUT', l.id, 'calls/n_' + vid, await liveSeal(LH.k0, { n })); } catch (e) { toast('Could not send the name. Check the internet.'); }
+  try { await liveReq('PUT', l.id, 'pub/calls/n_' + vid, await liveSeal(LH.k0, { n })); } catch (e) { toast('Could not send the name. Check the internet.'); }
 }
 async function livePushCall(code) {
   if (!LH.cur || !LH.kc) return;
   const c = S.calls[code];
   try {
-    if (!c) await liveReq('DELETE', LH.cur.id, 'calls/' + code);
-    else await liveReq('PUT', LH.cur.id, 'calls/' + code, await liveSeal(LH.kc, { status: c.status, at: c.at, who: c.who || '', num: c.num || '', by: c.by || liveName() || 'Host' }, LH.e));
+    if (!c) await liveReq('DELETE', LH.cur.id, 'pub/calls/' + code);
+    else await liveReq('PUT', LH.cur.id, 'pub/calls/' + code, await liveSeal(LH.kc, { status: c.status, at: c.at, who: c.who || '', num: c.num || '', by: c.by || liveName() || 'Host' }, LH.e));
   } catch (e) {}
 }
 async function liveStartShare() {
@@ -359,13 +371,13 @@ async function liveBoot() {
     LV.me = me; lvSave();
     for (const e in me.raw || {}) LV.keys[e] = await liveKey(me.raw[e]);
   } catch (e) { LV.bad = true; render(); return; }
-  LV.listener = liveListen(LV.id, '', (tree, ok) => liveViewerTree(tree, ok));
+  LV.listener = liveListen(LV.id, 'pub', (tree, ok) => liveViewerTree(tree, ok));
   livePresence(); LV.presT = setInterval(livePresence, 30e3);
   setInterval(() => { if (LV.snap) { const tx = $('#lv-fresh'); if (tx) tx.outerHTML = liveFreshLine(); } }, 5000);
 }
 async function livePresence() {
   if (!LV.k0 || !LV.me || document.hidden || LV.gone || LV.left) return;
-  try { await liveReq('PUT', LV.id, 'calls/p_' + LV.me.vid, await liveSeal(LV.k0, { at: now(), n: liveName(), dev: liveDevice(), pub: LV.me.pub })); } catch (e) {}
+  try { await liveReq('PUT', LV.id, 'seen/' + LV.me.vid, await liveSeal(LV.k0, { at: now(), n: liveName(), dev: liveDevice(), pub: LV.me.pub })); } catch (e) {}
 }
 // The key for a given round: the link's own, one we already hold, or one the host sealed for this phone.
 async function liveKeyFor(e, calls) {
@@ -385,35 +397,39 @@ async function liveViewerTree(tree, ok) {
   if (tree === undefined) return;
   LV.loaded = true;
   if (tree == null) { LV.gone = true; if (LV.snap) LV.snap.ended = true; renderMain(); ecgSync(); return; }
-  LV.gone = false;
+  const wasGone = LV.gone; LV.gone = false;
+  let dirty = wasGone || !LV.drawn;
   const calls = tree.calls || {};
   const nk = 'n_' + LV.me.vid;
   if (calls[nk] && LV.rawCalls[nk] !== calls[nk]) {
     LV.rawCalls[nk] = calls[nk];
     const v = await liveOpen(LV.k0, calls[nk]);
-    if (v && v.n) { liveSetName(v.n); livePresence().then(() => liveReq('DELETE', LV.id, 'calls/' + nk).catch(() => {})); toast('The host saved your name as ' + v.n); }
+    if (v && v.n) { liveSetName(v.n); livePresence().then(() => liveReq('DELETE', LV.id, 'pub/calls/' + nk).catch(() => {})); toast('The host saved your name as ' + v.n); }
   }
   if (tree.board) {
     const e = sealEpoch(tree.board), key = await liveKeyFor(e, calls);
     if (!key) { const was = LV.noKey; LV.noKey = true; if (!was) { renderMain(); ecgSync(); } return; }   // no redraw while waiting, so the emblem can be played with
+    if (tree.board !== LV.rawBoard || LV.noKey) {
     const snap = await liveOpen(key, tree.board);
     if (!snap) { if (!e) LV.bad = true; else LV.noKey = true; renderMain(); return; }
+    LV.rawBoard = tree.board; dirty = true;
     LV.noKey = false; LV.hadAccess = true; LV.e = e;
     const before = LV.snap ? new Set(LV.snap.in.map(r => r.c)) : null;
     LV.snap = snap; LV.at = Math.max(LV.at, snap.at || 0);
     if (before) { const fresh = snap.in.filter(r => !before.has(r.c)).length; if (fresh) ecgEvents(fresh, 0); }
+    }
   }
   for (const k in calls) {
-    if (LV.rawCalls[k] === calls[k] || k.startsWith('p_') || k.startsWith('g_') || k.startsWith('n_')) continue;
+    if (LV.rawCalls[k] === calls[k] || k.startsWith('g_') || k.startsWith('n_')) continue;
     const key = LV.keys[sealEpoch(calls[k])]; if (!key) continue;
     const v = await liveOpen(key, calls[k]); if (!v) continue;
     LV.rawCalls[k] = calls[k];
-    if (k === '_hb') { LV.at = Math.max(LV.at, v.at); continue; }
-    LV.calls[+k] = v;
+    if (k === '_hb') { LV.at = Math.max(LV.at, v.at); continue; }   // just a beat: the freshness line updates on its own
+    LV.calls[+k] = v; dirty = true;
   }
-  for (const k in LV.calls) if (!(k in calls)) delete LV.calls[k];
+  for (const k in LV.calls) if (!(k in calls)) { delete LV.calls[k]; dirty = true; }
   for (const k in LV.rawCalls) if (!(k in calls)) delete LV.rawCalls[k];
-  if (!$('#layer .sheet')) renderMain();
+  if (dirty && !$('#layer .sheet')) { renderMain(); LV.drawn = true; }
   ecgSync();
 }
 function liveEcgState() {
@@ -511,7 +527,7 @@ async function liveSetCall(code, status, extra = {}) {
   LV.calls[code] = v;
   if (LV.pending && LV.pending.code === code && status !== 'calling') LV.pending = null;
   renderMain();
-  try { await liveReq('PUT', LV.id, 'calls/' + code, await liveSeal(key, v, LV.e)); }
+  try { await liveReq('PUT', LV.id, 'pub/calls/' + code, await liveSeal(key, v, LV.e)); }
   catch (e) { toast('Could not share that. Check the internet.'); }
 }
 async function liveStartCall(el, e) {
@@ -550,7 +566,7 @@ async function liveExit() {
   if (!(await confirmSheet('Stop watching?', 'The board stops updating on this phone and the host sees you have left. You can open the link again any time.', 'Stop watching'))) return;
   LV.left = true; clearInterval(LV.presT);
   if (LV.listener) { LV.listener.close(); LV.listener = null; }
-  try { await liveReq('DELETE', LV.id, 'calls/p_' + LV.me.vid); } catch (e) {}
+  try { await liveReq('DELETE', LV.id, 'seen/' + LV.me.vid); } catch (e) {}
   renderMain();
 }
 
