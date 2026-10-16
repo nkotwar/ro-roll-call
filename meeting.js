@@ -154,7 +154,9 @@ function scheduleSync(delay) {
   clearTimeout(syncTimer);
   const s = S.session;
   if (!s || s.ended) return;
-  const d = delay != null ? delay : pollMs(s);
+  let d = delay != null ? delay : pollMs(s);
+  const toRush = rushStart(s) - now();                 // wake up on time for the rush window
+  if (toRush > 0 && !(s.rushOffUntil > now())) d = Math.min(d, toRush + 250);
   syncTimer = setTimeout(syncNow, d);
 }
 async function syncNow() {
@@ -162,11 +164,14 @@ async function syncNow() {
   if (document.hidden && s.source !== 'demo') { scheduleSync(); return; }
   syncing = true;
   const before = new Set(Object.values(s.parts).filter(p => p.active).map(p => p.key));
+  const sig = () => JSON.stringify([s.state, s.ended, s.error && s.error.msg, Object.values(s.parts).map(p => [p.key, p.active, p.first, p.lastEnd])]);
+  const sigBefore = sig();
   try {
     if (s.source === 'demo') syncDemo(s); else await syncGoogle(s);
     s.error = null; s.lastSync = now();
   } catch (e) {
     s.error = { msg: e.message, code: e.code };
+    if (e.code === 429) s.rushOffUntil = now() + 120e3;   // Google says slow down: drop the fast pace for 2 min
   }
   syncing = false;
   if (S.session !== s) return;
@@ -180,7 +185,7 @@ async function syncNow() {
     U.flash = new Set(fresh.map(p => p.key));
   }
   save();
-  if (U.tab === 'meet' && !U.route) renderMain();
-  if (!(s.error && s.error.code === 'reauth')) scheduleSync(s.error && s.error.code === 'net' ? 20000 : null);
+  if (U.tab === 'meet' && !U.route && sig() !== sigBefore) renderMain();   // redraw only when something changed
+  if (!(s.error && s.error.code === 'reauth')) scheduleSync(s.error && s.error.code === 'net' ? 20000 : s.error && s.error.code === 429 ? 60000 : null);
 }
 

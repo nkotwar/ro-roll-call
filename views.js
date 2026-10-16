@@ -303,12 +303,21 @@ function vcRun(t) {
   return d < 0 ? `${fmt(Math.max(1, Math.ceil(-d)))} to go` : d < 1 ? 'Started' : fmt(Math.floor(d));
 }
 // The status row is gone: the header heartbeat shows live / empty / ended. Only problems are shown here.
-function pollMs(s) { return s.source === 'demo' ? 4000 : s.state === 'empty' ? Math.max(EMPTY_POLL_MS, S.settings.poll * 1000) : Math.max(10, S.settings.poll) * 1000; }
+function basePollMs(s) { return s.source === 'demo' ? 4000 : s.state === 'empty' ? Math.max(EMPTY_POLL_MS, S.settings.poll * 1000) : Math.max(10, S.settings.poll) * 1000; }
+/* Rush window: from 3 min before the VC time to 5 min after, branches pour in, so check every 5 sec
+   whatever the setting says. About 4 Google calls per check = under 50 a minute, against Google's 600 a minute per user. */
+const RUSH_BEFORE = 3 * 60e3, RUSH_AFTER = 5 * 60e3, RUSH_MS = 5000;
+function rushStart(s) { return s && s.source !== 'demo' && s.details && s.details.when ? Date.parse(s.details.when) - RUSH_BEFORE : NaN; }
+function inRush(s, t = now()) {
+  const a = rushStart(s);
+  return !!a && !s.ended && t >= a && t < a + RUSH_BEFORE + RUSH_AFTER && !(s.rushOffUntil > t);
+}
+function pollMs(s) { return inRush(s) ? RUSH_MS : basePollMs(s); }
 function isStale(s) {
   if (!s || s.ended || document.hidden) return false;
   if (now() - (U.visibleAt || 0) < 12000) return false;          // just reopened: give the first check a moment
   const since = s.lastSync || s.createdAt;
-  return now() - since > 3 * pollMs(s) + 5000;
+  return now() - since > 3 * basePollMs(s) + 5000;    // judged on the normal pace, so a fast window doesn't cry wolf
 }
 function syncLine(s) {
   if (s.error && s.error.code !== 'net') {
@@ -525,7 +534,7 @@ function viewSettings() {
 
   <div class="sec-label">During meetings</div>
   <section class="card list">
-    <div class="setting"><div class="grow"><div class="title">Check for joiners every</div><div class="sub">Shorter is faster but uses more data</div></div>
+    <div class="setting"><div class="grow"><div class="title">Check for joiners every</div><div class="sub">Shorter is faster but uses more data. From 3 min before to 5 min after the VC time, Hazri checks every 5 sec anyway.</div></div>
       <select class="input" style="width:auto;min-height:40px;padding:6px 10px" data-setting="poll">${[10, 15, 30, 60].map(n => `<option value="${n}" ${+st.poll === n ? 'selected' : ''}>${n} sec</option>`).join('')}</select></div>
     <label class="setting"><div class="grow"><div class="title">Keep screen on</div><div class="sub">While the live board is open</div></div><span class="switch"><input type="checkbox" data-setting="keepAwake" ${st.keepAwake ? 'checked' : ''}><span></span></span></label>
     <div class="setting"><div class="grow"><div class="title">Default host controls</div><div class="sub">${accessLabel(c.access)} access${c.moderation ? ` · chat ${c.chat === 'HOSTS_ONLY' ? 'hosts only' : 'everyone'} · screen share ${c.present === 'HOSTS_ONLY' ? 'hosts only' : 'everyone'}` : ' · host management off'}</div></div></div>

@@ -101,6 +101,17 @@ def main():
         check('branch page opens with call buttons', pg.locator('.icon-btn.call').count() > 0)
         pg.click('[data-act="back"]'); pg.wait_for_timeout(200)
 
+        print('Fast checks around VC time')
+        R = lambda mins, extra='': pg.evaluate("(() => { const s = { source: 'google', ended: false, state: 'waiting', details: { when: new Date(Date.now() + (%s) * 60e3).toISOString() } %s }; return pollMs(s); })()" % (mins, extra))
+        normal = R(60)
+        check('normal pace an hour before', normal == S('S.settings.poll') * 1000, normal)
+        check('every 5 sec from 3 min before', R(2.9) == 5000 and R(0) == 5000)
+        check('every 5 sec until 5 min after', R(-4.9) == 5000 and R(-5.1) == normal)
+        check('empty room still checked fast in the window', R(-1, ", state: 'empty'") == 5000)
+        check('backs off if Google says slow down', R(0, ', rushOffUntil: Date.now() + 60e3') == normal)
+        check('no fast pace without a VC time or in demo', pg.evaluate("pollMs({ source: 'google', state: 'live', details: { when: '' } })") == normal
+              and pg.evaluate("pollMs({ source: 'demo', details: { when: new Date().toISOString() } })") == 4000)
+
         print('Track an existing meeting')
         pg.click('[data-tab="meet"]'); pg.wait_for_timeout(200)
         pg.click('[data-act="open-attach"]'); pg.wait_for_timeout(400)
