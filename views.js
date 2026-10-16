@@ -173,12 +173,10 @@ function seg(name, value, opts) {
   return `<div class="seg" role="group">${opts.map(([v, l]) => `<button type="button" aria-pressed="${v === value}" data-act="draft-set" data-k="${name}" data-v="${v}">${esc(l)}</button>`).join('')}</div>`;
 }
 /* The Create button: a heartbeat line runs across it while Google makes the room. */
-const ECG_PATH = (() => { let d = 'M0 20'; for (let x = 0; x < 400; x += 100) d += ` H${x + 52} L${x + 58} 15 L${x + 63} 20 H${x + 68} L${x + 72} 4 L${x + 77} 34 L${x + 81} 20 H${x + 88} L${x + 94} 13 L${x + 100} 20`; return d; })();
 function createBtn(d) {
   const n = d.expected.filter(code => !unitByCode.get(code)?.isRO).length;
   const sub = (d.demo ? 'Practice run' : 'Google Meet') + ` · ${n} branch${n === 1 ? '' : 'es'} to attend`;
   return `<button type="button" class="cbtn" data-act="create" id="create-btn">
-    <svg class="cbtn-ecg" viewBox="0 0 400 40" preserveAspectRatio="none" aria-hidden="true"><path d="${ECG_PATH}"/></svg>
     <span class="cbtn-ic">${d.demo ? I.play : I.video}</span>
     <span class="cbtn-txt"><b>${d.demo ? 'Start demo' : 'Create meeting'}</b><small>${esc(sub)}</small></span>
     <span class="cbtn-go">${I.chev}</span>
@@ -187,8 +185,9 @@ function createBtn(d) {
 function setCreateBusy(on) {
   const b = $('#create-btn'); if (!b) return;
   b.disabled = on; b.classList.toggle('busy', on);
+  if (on) btnEcgStart(b); else btnEcgStop(b);
   const t = $('.cbtn-txt b', b), sm = $('.cbtn-txt small', b);
-  if (on) { b.dataset.l = t.textContent; b.dataset.s = sm.textContent; t.textContent = 'Creating Meet link…'; sm.textContent = 'Checking in with Google'; }
+  if (on) { b.dataset.l = t.textContent; b.dataset.s = sm.textContent; t.textContent = 'Creating Meet link…'; }
   else if (b.dataset.l) { t.textContent = b.dataset.l; sm.textContent = b.dataset.s; }
 }
 function viewCreate() {

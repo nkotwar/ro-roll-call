@@ -107,3 +107,56 @@ function ecgEvents(joined, left) {
 }
 addEventListener('resize', () => { if (ECG.mode !== 'off') { ecgResize(); ecgDraw(); } });
 
+
+/* ───────────────────────── Create button monitor ─────────────────────────
+   While Google makes the room, the Create button shows the same heartbeat as the header:
+   same beat shape and sweep speed, fading trail and a glowing tip, drawn in the button's text colour. */
+function btnEcgStart(btn) {
+  if (!btn || btn.querySelector('canvas.cbtn-mon')) return;
+  const cv = document.createElement('canvas'); cv.className = 'cbtn-mon'; cv.setAttribute('aria-hidden', 'true');
+  btn.prepend(cv);
+  const ctx = cv.getContext('2d'), dpr = Math.min(2, devicePixelRatio || 1);
+  const W = cv.clientWidth, H = cv.clientHeight; if (!W) return;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const col = getComputedStyle(btn).color, L = Math.ceil(W) + 2, buf = new Float32Array(L).fill(NaN);
+  const base = H - 9, scale = 17, reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const ic = btn.querySelector('.cbtn-ic');
+  let head = 0, cur = null, dist = 0, gap = 20, last = 0;
+  const sample = () => {
+    for (;;) {
+      if (cur && dist < ECG_QRS) return cur * ecgShape(dist++ / ECG_QRS);
+      cur = null;
+      if (gap > 0) { gap--; return 0; }
+      cur = .9 + Math.random() * .2; dist = 0;
+      if (ic && ic.animate) ic.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.1)', offset: .35 }, { transform: 'scale(1)' }], { duration: 380, delay: 220, easing: 'ease-out' });   // icon beats with the trace
+      gap = Math.max(12, (.75 + Math.random() * .35) * ECG_SPEED - ECG_QRS);   // a calm, steady ~70 bpm
+    }
+  };
+  const draw = () => {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+    ctx.lineWidth = 1.6; ctx.lineJoin = ctx.lineCap = 'round'; ctx.strokeStyle = col;
+    for (let k = 1; k < L; k++) {
+      const i = (head - k + L) % L, j = (i + 1) % L;
+      if (isNaN(buf[i]) || isNaN(buf[j])) continue;
+      ctx.globalAlpha = Math.max(0, .7 * (1 - k / L * .9));
+      ctx.beginPath(); ctx.moveTo(i, base - buf[i] * scale); ctx.lineTo(i + 1, base - buf[j] * scale); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    const hy = base - (buf[head] || 0) * scale;
+    ctx.shadowColor = col; ctx.shadowBlur = 8; ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(head, hy, 2.4, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+  };
+  if (reduce) {   // still trace, no sweep
+    for (let x = 0; x < L; x++) { const ph = x % 110; buf[x] = ph < ECG_QRS ? ecgShape(ph / ECG_QRS) : 0; }
+    head = L - 1; draw(); return;
+  }
+  const loop = ts => {
+    if (!cv.isConnected) return;
+    const dt = last ? Math.min(.1, (ts - last) / 1000) : 1 / 60; last = ts;
+    let n = Math.round(ECG_SPEED * dt);
+    while (n-- > 0) { head = (head + 1) % L; buf[head] = sample(); for (let k = 1; k <= 14; k++) buf[(head + k) % L] = NaN; }
+    draw(); requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+}
+function btnEcgStop(btn) { const cv = btn && btn.querySelector('canvas.cbtn-mon'); if (cv) cv.remove(); }
