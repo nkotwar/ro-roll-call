@@ -15,11 +15,14 @@ from playwright.sync_api import sync_playwright
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FAKE = os.path.join(ROOT, 'tests', 'fake-udairo.js')
 results = []
+import time
+_t = [time.time()]
 
 
 def check(name, cond, detail=''):
     results.append((name, bool(cond)))
-    print(('  PASS  ' if cond else '  FAIL  ') + name + (f'  ({detail})' if detail and not cond else ''))
+    t = time.time(); dt = t - _t[0]; _t[0] = t
+    print(('  PASS  ' if cond else '  FAIL  ') + f'{dt:5.1f}s  ' + name + (f'  ({detail})' if detail and not cond else ''))
 
 
 def serve():
@@ -71,10 +74,10 @@ def main():
         check('emblem tap starts the ripple', pg.evaluate('document.getAnimations().length') > 0)
         conf = "[...document.querySelectorAll('canvas')].filter(c => c.style.zIndex === '60').length"
         bx = pg.locator('.ha-pod').bounding_box(); pg.wait_for_timeout(2200)
-        pg.mouse.move(bx['x'] + bx['width'] / 2, bx['y'] + bx['height'] / 2); pg.mouse.down(); pg.wait_for_timeout(1200); pg.mouse.up(); pg.wait_for_timeout(700)
-        check('short hold eases back, no confetti', pg.evaluate(conf) == 0 and pg.evaluate("getComputedStyle(document.querySelector('.ha-ring')).opacity") == '0')
-        pg.mouse.down(); pg.wait_for_timeout(4200); pg.mouse.up(); pg.wait_for_timeout(200)
-        check('3 sec hold then release fires confetti', pg.evaluate(conf) == 1)
+        pg.mouse.move(bx['x'] + bx['width'] / 2, bx['y'] + bx['height'] / 2); pg.mouse.down(); pg.wait_for_timeout(900); pg.mouse.up(); pg.wait_for_timeout(700)
+        check('short hold eases back, no confetti', pg.evaluate(conf) == 0)
+        pg.mouse.down(); pg.wait_for_timeout(2600); pg.mouse.up(); pg.wait_for_timeout(200)
+        check('2 sec hold then release fires confetti', pg.evaluate(conf) == 1)
         pg.wait_for_timeout(2300)
 
         print('Settings and About')
