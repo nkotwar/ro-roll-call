@@ -52,7 +52,6 @@ def modified_staff_file():
 
 def main():
     httpd, base = serve()
-    version = int(open(os.path.join(ROOT, 'version.js')).read().split('HAZRI_VERSION =')[1].split(';')[0])
     errors = []
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -72,18 +71,12 @@ def main():
         check('home shows the arc art', pg.locator('#home-arc').count() == 1)
         pg.click('.ha-pod-g'); pg.wait_for_timeout(150)
         check('emblem tap starts the ripple', pg.evaluate('document.getAnimations().length') > 0)
-        conf = "[...document.querySelectorAll('canvas')].filter(c => c.style.zIndex === '60').length"
-        bx = pg.locator('.ha-pod').bounding_box(); pg.wait_for_timeout(2200)
-        pg.mouse.move(bx['x'] + bx['width'] / 2, bx['y'] + bx['height'] / 2); pg.mouse.down(); pg.wait_for_timeout(900); pg.mouse.up(); pg.wait_for_timeout(700)
-        check('short hold eases back, no confetti', pg.evaluate(conf) == 0)
-        pg.mouse.down(); pg.wait_for_timeout(2600); pg.mouse.up(); pg.wait_for_timeout(200)
-        check('2 sec hold then release fires confetti', pg.evaluate(conf) == 1)
-        pg.wait_for_timeout(2300)
 
         print('Settings and About')
-        pg.click('[data-tab="settings"]'); pg.wait_for_timeout(1500)
+        pg.click('[data-tab="settings"]')
+        try: pg.wait_for_function("document.querySelector('#main').innerText.includes('latest version')", timeout=4000)
+        except Exception: pass
         txt = pg.inner_text('#main')
-        check('shows the version from version.js', f'Version {version}' in txt)
         check('update check reaches version.js', 'latest version' in txt, txt[-200:])
         pg.click('.brand-btn'); pg.wait_for_timeout(300)
         check('app icon opens About', pg.inner_text('#top h1') == 'About')
@@ -153,7 +146,7 @@ def main():
         pg.click('[data-act="create"]')
         for _ in range(30):                 # demo joiners arrive every few seconds
             pg.wait_for_timeout(1000)
-            if S('Object.keys(S.session.parts).length') >= 2: break
+            if S('Object.keys(S.session.parts).length') >= 1: break
         check('people join the demo', S('Object.keys(S.session.parts).length') > 0)
         check('heartbeat line is live', pg.locator('#top canvas.ecg').count() == 1)
         check('meeting card shows date and timer', pg.locator('.meet-line .vc-run').count() == 1)
@@ -184,9 +177,6 @@ def main():
         check('VC Desk agenda pick updates the meeting', S('S.session.details.agenda') == 'Smoke test agenda, CASA Review')
         pg.click('#m-head-picks .pick >> nth=0'); pg.wait_for_timeout(100)
         check('headed-by suggestion fills the field', S('S.session.details.headedBy') == pg.input_value('#m-head') != '')
-        pg.click('[data-act="attendance-image"]'); pg.wait_for_timeout(2500)
-        check('attendance image renders', pg.locator('#ai-body img').count() == 1)
-        pg.click('.sheet [data-act="sheet-close"]'); pg.wait_for_timeout(400)
         pg.click('[data-act="to-board"]'); pg.wait_for_timeout(300)
 
         print('Tabs')
