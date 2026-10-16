@@ -3,7 +3,8 @@
    snapshot of the board to a free Firebase Realtime Database; anyone holding the link watches it live
    and can join the calling round. Everything is encrypted on the host phone with AES-GCM; the key
    travels only in the link's #fragment, which browsers never send to any server, so Firebase stores
-   nothing readable. The board is deleted from Firebase when the meeting ends.
+   nothing readable. The link carries just that key; the board's address in Firebase is worked out
+   from it one way (SHA-256), so Firebase never learns the key. The board is deleted from Firebase when the meeting ends.
    Locking or removing a viewer moves the board to a fresh key. Every viewer's phone makes its own key
    pair when it opens the link; the host hands the fresh key only to the viewers it keeps, sealed for
    each of them, so the link alone no longer opens the board.
@@ -21,6 +22,7 @@ const LIVE_SEEN_MS = 75e3;        // a viewer counts as watching if heard from t
 const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
 const liveRand = n => b64u(crypto.getRandomValues(new Uint8Array(n)));
+const liveIdOf = async k => b64u((await crypto.subtle.digest('SHA-256', unb64u(k))).slice(0, 16));
 async function liveKey(k) { return crypto.subtle.importKey('raw', unb64u(k), 'AES-GCM', false, ['encrypt', 'decrypt']); }
 // Sealed values look like "v1.<iv>.<data>" for the link's own key, or "e3.<iv>.<data>" for the 3rd fresh key.
 const sealEpoch = str => { const p = String(str).split('.')[0]; return p === 'v1' ? 0 : /^e\d+$/.test(p) ? +p.slice(1) : -1; };
@@ -72,16 +74,14 @@ function liveListen(id, sub, onTree) {
   const open = () => {
     if (closed) return;
     try { es = new EventSource(livePath(id, sub)); } catch (e) { poll(); return; }
-    const handle = kind => ev => {
+    const handle = ev => {
       fails = 0;
       let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
       if (!m) return;
-      if (kind === 'put') setAt(m.path, m.data);
-      else if (m.data) for (const k in m.data) setAt((m.path === '/' ? '' : m.path) + '/' + k, m.data[k]);
+      setAt(m.path, m.data);
       onTree(tree, true);
     };
-    es.addEventListener('put', handle('put'));
-    es.addEventListener('patch', handle('patch'));
+    es.addEventListener('put', handle);
     es.addEventListener('cancel', () => { es.close(); onTree(null, true); });
     es.onerror = () => {
       if (closed) return;
@@ -94,12 +94,12 @@ function liveListen(id, sub, onTree) {
 }
 const liveName = () => { try { return localStorage.getItem('hazri.name') || ''; } catch (e) { return ''; } };
 const liveSetName = n => { try { localStorage.setItem('hazri.name', n); } catch (e) {} };
-function askLiveName(why, skip) {
+function askLiveName(why) {
   return new Promise(res => {
     let done = false; const fin = v => { if (!done) { done = true; res(v); } };
     openSheet(`<div class="sheet-head"><div class="grow"><h3>Your name</h3><div class="sub">${esc(why)}</div></div></div>
       <form class="sheet-body" id="ln-form"><input class="input" id="ln-name" value="${esc(liveName())}" placeholder="e.g. Ramesh, RO" autocomplete="name" maxlength="40" required></form>
-      <div class="sheet-foot"><button class="btn btn-ghost" style="flex:1" id="ln-no">${skip ? 'Skip' : 'Cancel'}</button><button class="btn btn-primary" style="flex:1" id="ln-ok">Save</button></div>`, { onClose: () => fin('') });
+      <div class="sheet-foot"><button class="btn btn-ghost" style="flex:1" id="ln-no">Cancel</button><button class="btn btn-primary" style="flex:1" id="ln-ok">Save</button></div>`, { onClose: () => fin('') });
     const ok = () => { const v = $('#ln-name').value.trim().slice(0, 40); if (!v) { $('#ln-name').focus(); return; } liveSetName(v); fin(v); closeSheet(); };
     $('#ln-ok').onclick = ok; $('#ln-form').onsubmit = e => { e.preventDefault(); ok(); }; $('#ln-no').onclick = () => closeSheet();
     setTimeout(() => $('#ln-name')?.focus(), 250);
@@ -115,7 +115,7 @@ function liveDevice() {
 const LH = { cur: null, k0: null, kc: null, e: 0, keys: {}, names: {}, listener: null, tree: null, lastJson: '', lastSnap: null, hbT: 0, remote: {}, viewers: {}, granted: {}, watchers: 0, busy: false };
 function liveLink(l) {
   const local = LIVE_DB !== LIVE_HOME ? '?livedb=' + encodeURIComponent(LIVE_DB) : '';
-  return location.origin + location.pathname.replace(/index\.html$/, '') + local + '#w=' + l.id + '.' + l.key;
+  return location.origin + location.pathname.replace(/index\.html$/, '') + local + '#' + l.key;
 }
 function liveSnap() {
   const s = S.session, b = board(); if (!s || !b) return null;
@@ -129,8 +129,8 @@ function liveSnap() {
   };
   const ppl = list => list.map(x => ({ n: x.t && x.t.p ? pretty(personById.get(x.t.p)?.name || x.p.name) : x.p.name, a: !!x.p.active }));
   return {
-    v: 1, code: s.meetingCode, uri: s.meetingUri || '', demo: s.source === 'demo', when: s.details.when || '', agenda: s.details.agenda || '', head: s.details.headedBy || '',
-    ended: !!s.ended, state: s.state || '',
+    code: s.meetingCode, uri: s.meetingUri || '', demo: s.source === 'demo', when: s.details.when || '', agenda: s.details.agenda || '', head: s.details.headedBy || '',
+    ended: !!s.ended,
     total: b.total, joined: b.joined, inCount: b.inCount, leftCount: b.leftCount, missCount: b.missCount,
     miss: b.rows.miss.map(r => ({ c: r.u.code, n: unitLabel(r.u), bm: bmOf(r.u) ? pretty(bmOf(r.u).name) : '', nums: nums(r.u) })),
     left: b.rows.left.map(r => ({ c: r.u.code, n: unitLabel(r.u), t: r.lastLeft, ppl: ppl(r.list), nums: nums(r.u) })),
@@ -240,7 +240,7 @@ async function liveRotate() {
   const l = LH.cur; if (!l) return;
   if (!l.hp) { const p = await livePair(); l.hp = p.priv; l.hpub = p.pub; }
   if (l.e) l.old = { ...(l.old || {}), [l.e]: l.kc };
-  l.e = (l.e || 0) + 1; l.kc = liveRand(32);
+  l.e = (l.e || 0) + 1; l.kc = liveRand(16);
   LH.e = l.e; LH.kc = await liveKey(l.kc); LH.keys[l.e] = LH.kc; LH.granted = {}; LH.lastJson = '';
   save();
   await liveAdmit();
@@ -289,7 +289,8 @@ async function liveStartShare() {
   const s = S.session; if (!s) return;
   if (!s.live) {
     if (!liveName()) { const n = await askLiveName('Shown to others when you call a branch'); if (!n) return; }
-    s.live = { id: liveRand(16), key: liveRand(32), at: now(), e: 0, lock: false, admitted: {}, dropped: [] }; save();
+    const key = liveRand(16);   // 128-bit key = 22 characters in the link
+    s.live = { id: await liveIdOf(key), key, at: now(), e: 0, lock: false, admitted: {}, dropped: [] }; save();
   }
   try { await liveReconcile(); if (!LH.cur) throw new Error(); await livePush(true); }
   catch (e) { toast('Could not reach the live link service. Check the internet and try again.'); return; }
@@ -297,8 +298,8 @@ async function liveStartShare() {
 }
 function liveShareText() {
   const s = S.session, d = s.details;
-  return ['*Video Conference – RO Udaipur*', d.when ? '🕚 ' + fmtWhen(d.when) : '', d.headedBy ? '👤 Headed by: ' + d.headedBy : '', d.agenda ? '📋 Agenda: ' + d.agenda : '',
-    s.meetingUri ? '🔗 Join: ' + s.meetingUri : '', '', '📊 *Live attendance*: see who has joined and help call the rest', liveLink(s.live)].filter((x, i, a) => x || (i && a[i - 1])).join('\n');
+  const vc = ['*Video Conference – RO Udaipur*', d.when ? '🕚 ' + fmtWhen(d.when) : '', d.headedBy ? '👤 Headed by: ' + d.headedBy : '', d.agenda ? '📋 Agenda: ' + d.agenda : ''].filter(Boolean);
+  return [...vc, '', '📊 *Live attendance*: see who has joined and help call the rest', liveLink(s.live)].join('\n');
 }
 function liveSendLink() {
   const t = liveShareText();
@@ -349,11 +350,10 @@ const lvStoreKey = () => 'hazri.lv.' + LV.id;
 function lvSave() { try { localStorage.setItem(lvStoreKey(), JSON.stringify({ vid: LV.me.vid, pub: LV.me.pub, priv: LV.me.priv, raw: LV.me.raw })); } catch (e) {} }
 async function liveBoot() {
   document.documentElement.classList.add('viewer');
-  const m = location.hash.match(/^#w=([\w-]{22})\.([\w-]{43})$/);
-  LV.id = m[1];
+  const k = location.hash.slice(1);
   render();
   try {
-    LV.k0 = await liveKey(m[2]); LV.keys[0] = LV.k0;
+    LV.id = await liveIdOf(k); LV.k0 = await liveKey(k); LV.keys[0] = LV.k0;
     let me = null; try { me = JSON.parse(localStorage.getItem(lvStoreKey())); } catch (e) {}
     if (!me || !me.priv) me = { vid: liveRand(9), ...(await livePair()), raw: {} };
     LV.me = me; lvSave();

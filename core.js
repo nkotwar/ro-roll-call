@@ -4,8 +4,8 @@
 
 /* ───────────────────────── constants & helpers ───────────────────────── */
 const KEY = 'rollcall.v1';
-// Opened from a live-board link (#w=<board id>.<key>): this device only watches, it never touches saved data.
-const VIEWER = /^#w=[\w-]{22}\.[\w-]{43}$/.test(location.hash);
+// Opened from a live-board link (…/#<22-character key>): this device only watches, it never touches saved data.
+const VIEWER = /^#[\w-]{22}$/.test(location.hash);
 const SCOPES = 'https://www.googleapis.com/auth/meetings.space.created https://www.googleapis.com/auth/meetings.space.readonly';
 const API = 'https://meet.googleapis.com/v2/';
 // Your OAuth Client ID. It is public by design (Google shows it in every sign-in URL), so it is safe to keep in the code.
