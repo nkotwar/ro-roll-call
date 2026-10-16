@@ -325,6 +325,8 @@ function viewShare() {
       </div></div>
   </section>
 
+  ${liveDeskCard()}
+
   <section class="m-card-plain">
     <div class="sec-label" style="margin:0 0 8px">Who should attend</div>
     ${attField(s.expected, 'edit-expected')}
@@ -444,6 +446,7 @@ function viewBoard() {
       <div class="row meet-line"><span class="mono muted" style="font-size:12px;flex:none">${esc(s.meetingCode)}</span>${d.when ? `<span class="sub ellipsis">${esc(new Date(d.when).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ', ' + fmtClock(d.when))}</span>` : ''}${s.ended ? `<span class="vc-run">${I.stop}<span>Ended</span></span>` : d.when ? `<span class="vc-run">${I.clock}<span data-since="${Date.parse(d.when)}">${vcRun(Date.parse(d.when))}</span></span>` : ''}</div>
       ${d.agenda ? `<div class="agenda">${esc(d.agenda)}</div>` : ''}
       ${d.headedBy ? `<div class="sub">Headed by ${esc(d.headedBy)}</div>` : ''}
+      ${liveBadge()}
     </div>
     <div class="score">${ring(b.joined, b.total)}
       <div class="tallies"><div class="tally in"><b>${b.inCount}</b><span>In now</span></div><div class="tally left"><b>${b.leftCount}</b><span>Left</span></div><div class="tally miss"><b>${b.missCount}</b><span>Not joined</span></div></div>
@@ -558,7 +561,7 @@ async function applyUpdate() {
   try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.unregister())); } catch (e) {}
   try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } catch (e) {}
   // GitHub Pages lets the browser keep files for ~10 minutes. Force fresh copies into the browser cache before reloading.
-  await Promise.all(['./', 'index.html', 'version.js', 'core.js', 'google.js', 'meeting.js', 'heartbeat.js', 'ui.js', 'sheets.js', 'views.js', 'actions.js', 'manifest.webmanifest', 'icon-192.png', 'cbi-emblem.png'].map(f => fetch(f, { cache: 'reload' }).catch(() => {})));
+  await Promise.all(['./', 'index.html', 'version.js', 'core.js', 'google.js', 'meeting.js', 'heartbeat.js', 'ui.js', 'sheets.js', 'views.js', 'live.js', 'actions.js', 'manifest.webmanifest', 'icon-192.png', 'cbi-emblem.png'].map(f => fetch(f, { cache: 'reload' }).catch(() => {})));
   try { sessionStorage.setItem('rc.tab', 'settings'); } catch (e) {}
   location.reload();
 }

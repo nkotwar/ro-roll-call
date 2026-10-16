@@ -46,9 +46,12 @@ function summaryText() {
 }
 /* ───────────────────────── boot ───────────────────────── */
 if ('serviceWorker' in navigator && /^https:|^http:\/\/localhost/.test(location.href)) navigator.serviceWorker.register('sw.js').catch(() => {});
-checkPersist().then(() => { if (U.tab === 'settings') renderMain(); });
+if (!VIEWER) checkPersist().then(() => { if (U.tab === 'settings') renderMain(); });
 try { history.replaceState({ rc: 'root' }, ''); history.pushState({ rc: 'guard' }, ''); } catch (e) {}
-render();
-if (S.session && !S.session.ended) syncNow();
-if (S.pendingCall) setTimeout(openCallFeedback, 600); // app was reloaded while the call was on
-window.__rc = { S, board, suggest };
+if (VIEWER) liveBoot();
+else {
+  render();
+  if (S.session && !S.session.ended) syncNow();
+  if (S.pendingCall) setTimeout(openCallFeedback, 600); // app was reloaded while the call was on
+}
+window.__rc = { S, board, suggest, LH, LV, liveLink };

@@ -7,7 +7,7 @@ The app is public code on GitHub. **Staff data never goes to GitHub**: you load 
 ## 1. Put the app on GitHub Pages
 
 1. On github.com, click **+ → New repository**. Name it `ro-roll-call`, set it to **Public**, and click **Create repository**.
-2. Click **uploading an existing file**, then drag in every file from this folder: `index.html`, `version.js`, the eight scripts (`core.js`, `google.js`, `meeting.js`, `heartbeat.js`, `ui.js`, `sheets.js`, `views.js`, `actions.js`), `sw.js`, `manifest.webmanifest`, `icon.svg`, `icon-192.png`, `icon-512.png`, `README.md`, `SETUP.md` and `.gitignore`. Click **Commit changes**.
+2. Click **uploading an existing file**, then drag in every file from this folder: `index.html`, `version.js`, the nine scripts (`core.js`, `google.js`, `meeting.js`, `heartbeat.js`, `ui.js`, `sheets.js`, `views.js`, `live.js`, `actions.js`), `sw.js`, `manifest.webmanifest`, `icon.svg`, `icon-192.png`, `icon-512.png`, `README.md`, `SETUP.md` and `.gitignore`. Click **Commit changes**.
    - Do **not** upload `udairo.js`, or any backup or mappings file.
    - `.gitignore` is hidden on some computers. If you can't see it, skip it; it only protects you when using git from a computer.
 3. In the repository, go to **Settings → Pages**. Under *Build and deployment*, set Source to **Deploy from a branch**, Branch to **main**, folder **/ (root)**, then **Save**.
@@ -51,3 +51,28 @@ A new origin can take a few minutes to start working. If sign-in says `origin_mi
 - **Updating the app:** upload the changed files and raise the number in `version.js` (the only place the version lives). Phones then show "Version N is available" in Settings → App; tap **Update now**.
 
 Built by Nitin Kotwar (139535), via PDUDAIRO.
+
+
+## Live link (Firebase)
+
+The VC Desk's **Share live** posts an encrypted copy of the board to a free Firebase Realtime Database
+(`hazri-live`, Singapore), so anyone with the link can watch and help call. The key is in the link after `#`
+and never reaches Firebase. The database address is in `live.js` (`LIVE_HOME`). Its rules (Realtime Database → Rules):
+
+```json
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "live": {
+      "$id": {
+        ".read": "$id.length >= 22",
+        ".write": "$id.length >= 22",
+        "board": { ".validate": "newData.isString() && newData.val().length < 150000" },
+        "calls": { "$c": { ".validate": "newData.isString() && newData.val().length < 3000" } },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}
+```

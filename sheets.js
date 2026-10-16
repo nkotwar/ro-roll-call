@@ -577,6 +577,11 @@ const ACT = {
   ignore: () => { const key = $('.sheet').dataset.key; const s = S.session; if (s.ignored[key]) delete s.ignored[key]; else s.ignored[key] = true; save(); closeSheet(); render(); },
   'call-sheet': el => openCall(+el.dataset.code),
   'call-status': el => {
+    if (VIEWER) {
+      const code = +el.dataset.code, pc = LV.pending && LV.pending.code === code ? LV.pending : {};
+      LV.pending = null; closeSheet(); liveSetCall(code, el.dataset.status, pc);
+      toast(`${liveFind(code)?.n || 'Branch'}: ${CALL_STATUS[el.dataset.status].label}`); return;
+    }
     const code = +el.dataset.code, status = el.dataset.status;
     const pc = S.pendingCall && S.pendingCall.code === code ? S.pendingCall : {};
     const inFeedback = !!(S.pendingCall && S.pendingCall.code === code);
@@ -586,7 +591,7 @@ const ACT = {
     if (status === 'clear') toast(label + ': call status cleared', () => { if (prev) S.calls[code] = prev; save(); renderMain(); });
     else toast(`${label}: ${CALL_STATUS[status].label}`, () => { if (prev) S.calls[code] = prev; else delete S.calls[code]; save(); renderMain(); });
   },
-  'reset-calls': async () => { if (await confirmSheet('Start a new calling round?', 'All call statuses (informed, recall later, no answer, denied) are cleared so you can start fresh before the next VC.', 'Clear statuses', true)) { S.calls = {}; S.pendingCall = null; save(); renderMain(); toast('Call statuses cleared'); } },
+  'reset-calls': async () => { if (await confirmSheet('Start a new calling round?', 'All call statuses (informed, recall later, no answer, denied) are cleared so you can start fresh before the next VC.', 'Clear statuses', true)) { const old = Object.keys(S.calls); S.calls = {}; S.pendingCall = null; save(); old.forEach(c => livePushCall(+c)); renderMain(); toast('Call statuses cleared'); } },
   copy: el => copyText(el.dataset.v, 'Number copied'),
   'end-ask': () => openEndSheet(),
   'edit-expected': () => { closeSheet(true); U.draft = { expected: S.session.expected.slice() }; U.sessionDraft = U.draft; openExpected(); },
@@ -623,7 +628,7 @@ document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const a = el.dataset.act;
-  if (a === 'dial') { startCall(el); return; } // let the phone dialer open
+  if (a === 'dial') { if (VIEWER) liveStartCall(el, e); else startCall(el); return; } // let the phone dialer open
   if (el.tagName === 'A' && !el.getAttribute('href')?.startsWith('#')) return;
   e.preventDefault();
   ACT[a] && ACT[a](el, e);

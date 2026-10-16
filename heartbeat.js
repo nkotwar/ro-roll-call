@@ -78,9 +78,9 @@ function ecgLoop(ts) {
   ECG.raf = requestAnimationFrame(ecgLoop);
 }
 function ecgSync() {
-  const s = S.session;
-  const n = s ? Object.values(s.parts).filter(p => p.active).length : 0;
-  const mode = !s || s.ended ? 'off' : isStale(s) ? 'stale' : n > 0 ? 'live' : 'faint';
+  const s = S.session, ov = VIEWER ? liveEcgState() : null;
+  const n = ov ? ov.n : s ? Object.values(s.parts).filter(p => p.active).length : 0;
+  const mode = ov ? ov.mode : !s || s.ended ? 'off' : isStale(s) ? 'stale' : n > 0 ? 'live' : 'faint';
   ECG.mode = mode; ECG.n = n;
   document.documentElement.classList.toggle('ecg-on', mode !== 'off');
   if (mode === 'off') { if (ECG.cv) ECG.cv.remove(); cancelAnimationFrame(ECG.raf); ECG.raf = 0; ECG.queue = []; return; }

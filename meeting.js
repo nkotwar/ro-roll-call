@@ -51,15 +51,17 @@ const CALL_STATUS = {
   recall: { label: 'Recall later', cls: 'left', rank: 1 },
   noanswer: { label: 'No answer', cls: '', rank: 2 },
   denied: { label: 'Denied', cls: 'miss', rank: 4 },
-  called: { label: 'Called', cls: 'acc', rank: 3 }
+  called: { label: 'Called', cls: 'acc', rank: 3 },
+  calling: { label: 'Calling', cls: 'acc', rank: 3 }   // someone on the live link is on the phone now
 };
 if (!S.calls) S.calls = {};
-const callOf = code => S.calls[code] || null;
+const callOf = code => (VIEWER ? LV.calls : S.calls)[code] || null;
 const callRank = code => { const c = callOf(code); return c ? (CALL_STATUS[c.status] || CALL_STATUS.called).rank : 0; };
 function callChip(code) {
   const c = callOf(code); if (!c) return '';
-  const st = CALL_STATUS[c.status] || CALL_STATUS.called;
-  return `<span class="chip ${st.cls}">${st.label} · ${ago(c.at)}</span>`;
+  const k = claimLabel(c), st = CALL_STATUS[k] || CALL_STATUS.called;
+  if (k === 'calling') return `<span class="chip ${st.cls}">${esc(c.by || 'Someone')} is calling…</span>`;
+  return `<span class="chip ${st.cls}">${st.label}${c.by && c.by !== liveName() ? ' · ' + esc(c.by) : ''} · ${ago(c.at)}</span>`;
 }
 function dial(code, who, number) {
   return `href="tel:${tel(number)}" data-act="dial" data-code="${code}" data-who="${esc(who)}" data-num="${esc(number)}"`;
@@ -73,7 +75,7 @@ function setCallStatus(code, status, extra = {}) {
   if (status === 'clear') delete S.calls[code];
   else S.calls[code] = { status, at: (prev && extra.keepTime) ? prev.at : now(), who: extra.who || (prev && prev.who) || '', num: extra.num || (prev && prev.num) || '' };
   if (S.pendingCall && S.pendingCall.code === code) S.pendingCall = null;
-  save();
+  save(); livePushCall(code);
   const u = unitByCode.get(code);
   return { prev, label: u ? unitLabel(u) : 'Branch' };
 }

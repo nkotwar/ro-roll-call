@@ -45,6 +45,7 @@ function renderTop(title, { back = false, actions = '' } = {}) {
 }
 function renderMain() {
   const m = $('#main');
+  if (VIEWER) { m.innerHTML = viewLive(); afterRender(); return; }
   const r = U.route;
   let html = '';
   if (r && r.name === 'create') html = viewCreate();
@@ -65,6 +66,7 @@ function afterRender() {
 
 /* ───────────────────────── swipe between tabs ───────────────────────── */
 function swipeTabs(dir) {
+  if (VIEWER) { const order = ['miss', 'left', 'in'], i = order.indexOf(LV.tab) + dir; if (i < 0 || i >= order.length) return; LV.tab = order[i]; U.slide = dir; renderMain(); return; }
   if (U.tab === 'dir') {
     const order = ['branches', 'ro', 'linked']; const i = order.indexOf(U.dirFilter) + dir;
     if (i < 0 || i >= order.length) return;
@@ -81,7 +83,7 @@ function swipeTabs(dir) {
   const main = $('#main');
   main.addEventListener('touchstart', e => {
     const t = e.touches[0];
-    ok = e.touches.length === 1 && !U.route && (U.tab === 'dir' || (U.tab === 'meet' && !!S.session)) && !e.target.closest('.picks,.untagged-list,input,textarea,select');
+    ok = e.touches.length === 1 && !U.route && (VIEWER ? !!LV.snap : (U.tab === 'dir' || (U.tab === 'meet' && !!S.session))) && !e.target.closest('.picks,.untagged-list,input,textarea,select');
     x0 = t.clientX; y0 = t.clientY; t0 = Date.now();
   }, { passive: true });
   main.addEventListener('touchend', e => {
@@ -99,7 +101,7 @@ function swipeTabs(dir) {
   el.innerHTML = '<img src="cbi-emblem.png" alt="">'; document.body.appendChild(el);
   const MAX = 110, ARM = 64;
   let y0 = 0, x0 = 0, pulling = false, armed = false, busy = false, d = 0;
-  const can = () => U.tab === 'meet' && !U.route && !!S.session && !busy && !$('#layer .sheet') && (window.scrollY || document.documentElement.scrollTop) <= 0;
+  const can = () => U.tab === 'meet' && !U.route && (VIEWER ? !!LV.snap : !!S.session) && !busy && !$('#layer .sheet') && (window.scrollY || document.documentElement.scrollTop) <= 0;
   const place = (shown, spin) => {
     const top = $('#top').getBoundingClientRect().bottom;
     el.style.top = (top - 44) + 'px';
@@ -127,7 +129,7 @@ function swipeTabs(dir) {
     busy = true; armed = false;
     el.style.transition = 'transform .2s ease'; place(ARM, 0); el.classList.add('spin');
     const t0 = Date.now();
-    try { await syncNow(); } catch (err) {}
+    try { if (VIEWER) { if (LV.listener) await LV.listener.refresh(); } else await syncNow(); } catch (err) {}
     while (syncing) await new Promise(r => setTimeout(r, 100));
     await new Promise(r => setTimeout(r, Math.max(0, 650 - (Date.now() - t0))));
     busy = false; reset();
@@ -144,7 +146,7 @@ function toast(msg, undo) {
   toastTimer = setTimeout(() => t.classList.remove('show'), undo ? 5000 : 3000);
 }
 async function manageWake() {
-  const want = S.settings.keepAwake && S.session && !S.session.ended && U.tab === 'meet' && !U.route && !document.hidden;
+  const want = !VIEWER && S.settings.keepAwake && S.session && !S.session.ended && U.tab === 'meet' && !U.route && !document.hidden;
   try {
     if (want && !U.wake && navigator.wakeLock) { U.wake = await navigator.wakeLock.request('screen'); U.wake.addEventListener('release', () => { U.wake = null; }); }
     else if (!want && U.wake) { await U.wake.release(); U.wake = null; }
@@ -152,6 +154,7 @@ async function manageWake() {
 }
 function startCall(el) {
   if (unitByCode.get(+el.dataset.code)?.isRO) return;   // calls to RO colleagues aren't part of the calling round
+  if (S.session && S.session.live && !S.session.ended) setCallStatus(+el.dataset.code, 'calling', { who: el.dataset.who || '', num: el.dataset.num || '' });   // helpers on the live link see you're on it
   S.pendingCall = { code: +el.dataset.code, who: el.dataset.who || '', num: el.dataset.num || '', at: now() };
   save(); U.leftForCall = false;
   if ($('#layer .sheet')) closeSheet(true);
@@ -159,6 +162,7 @@ function startCall(el) {
   setTimeout(() => { if (S.pendingCall && !U.leftForCall && !document.hidden) openCallFeedback(); }, 4000);
 }
 document.addEventListener('visibilitychange', () => {
+  if (VIEWER) { liveVisible(); ecgSync(); return; }
   if (!document.hidden) U.visibleAt = Date.now();
   manageWake(); ecgSync();
   if (document.hidden) { if (S.pendingCall) U.leftForCall = true; return; }

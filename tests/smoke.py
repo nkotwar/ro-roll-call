@@ -9,7 +9,9 @@ using the FAKE staff list in tests/fake-udairo.js. Google sign-in and Meet are n
 exercised (demo meetings stand in for them); check real meetings on the phone.
 Exit code 0 = all passed.
 """
-import functools, http.server, os, socketserver, sys, tempfile, threading
+import functools, http.server, json, os, socketserver, sys, tempfile, threading
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fake_firebase
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -52,6 +54,7 @@ def modified_staff_file():
 
 def main():
     httpd, base = serve()
+    fb, store, db = fake_firebase.start()          # local stand-in for the live-link database
     errors = []
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -61,7 +64,7 @@ def main():
         S = lambda expr: pg.evaluate('(() => { const S = window.__rc.S; return ' + expr + '; })()')
 
         print('First run')
-        pg.goto(base + '/index.html'); pg.wait_for_timeout(800)
+        pg.goto(base + '/index.html?livedb=' + db); pg.wait_for_timeout(800)
         check('asks for the staff list', pg.locator('[data-act="import-staff"]').count() > 0)
         with pg.expect_file_chooser() as fc:
             pg.click('[data-act="import-staff"]')
@@ -177,7 +180,30 @@ def main():
         check('VC Desk agenda pick updates the meeting', S('S.session.details.agenda') == 'Smoke test agenda, CASA Review')
         pg.click('#m-head-picks .pick >> nth=0'); pg.wait_for_timeout(100)
         check('headed-by suggestion fills the field', S('S.session.details.headedBy') == pg.input_value('#m-head') != '')
+
+        print('Live link')
+        pg.click('[data-act="live-share"]'); pg.wait_for_timeout(400)
+        pg.fill('#ln-name', 'Host Tester'); pg.click('#ln-ok'); pg.wait_for_timeout(1500)
+        link = pg.evaluate('window.__rc.liveLink(window.__rc.S.session.live)')
+        check('share gives a link with the key after #', '#w=' in link and S('!!S.session.live'))
+        raw = json.dumps(store.tree)
+        check('board reaches the relay encrypted (no names readable)', 'board' in raw and 'Alpha' not in raw and 'Purohit' not in raw)
+        vctx = browser.new_context(viewport={'width': 360, 'height': 800}, has_touch=True, is_mobile=True)
+        vw = vctx.new_page(); vw.on('pageerror', lambda e: errors.append('viewer: ' + str(e)))
+        vw.goto(link); vw.wait_for_timeout(2500)
+        V = lambda expr: vw.evaluate('(() => { const LV = window.__rc.LV; return ' + expr + '; })()')
+        check('viewer sees the same board', V('LV.snap && LV.snap.total') == S('window.__rc.board().total') and vw.locator('[data-act="live-tab"]').count() == 3)
+        check('viewer shows no app tabs or staff import', not vw.locator('.tabs').is_visible() and vw.locator('[data-act="import-staff"]').count() == 0)
+        check('host counts the watcher', S('window.__rc.LH.watchers') >= 1)
+        code = vw.get_attribute('#board-list .call-btn >> nth=0', 'data-code')
+        vw.click('#board-list .call-btn >> nth=0'); vw.wait_for_timeout(400)
+        vw.fill('#ln-name', 'Ramesh'); vw.click('#ln-ok'); vw.wait_for_timeout(1500)
+        check('host sees who is calling', S(f"S.calls[{code}] && S.calls[{code}].status + '/' + S.calls[{code}].by") == 'calling/Ramesh')
+        vw.wait_for_timeout(3500)
+        vw.click('.sheet [data-status="informed"]'); vw.wait_for_timeout(1500)
+        check('call outcome from viewer reaches host', S(f"S.calls[{code}].status") == 'informed')
         pg.click('[data-act="to-board"]'); pg.wait_for_timeout(300)
+        check('board shows the live link is on', pg.locator('.live-line').count() == 1)
 
         print('Tabs')
         pg.click('[data-tab="dir"]'); pg.wait_for_timeout(300)
@@ -195,6 +221,9 @@ def main():
         check('End asks first, offering the image', pg.locator('#end-img').count() == 1)
         pg.click('#end-yes'); pg.wait_for_timeout(400)
         check('session ends', S('S.session') is None)
+        vw.wait_for_timeout(5500)
+        check('viewer sees the VC has ended', 'This VC has ended' in vw.inner_text('#main'))
+        check('relay data deleted after End', store.tree in ({}, {'live': {}}), json.dumps(store.tree)[:120])
         check('no script errors anywhere', not errors, '; '.join(errors)[:300])
         browser.close()
     httpd.shutdown()
