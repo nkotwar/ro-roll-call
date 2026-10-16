@@ -139,11 +139,35 @@ function viewAbout() {
 
 /* ───────────────────────── views: create + share ───────────────────────── */
 function draftDefault(demo) {
-  return { demo: !!demo, when: toLocalInput(nextHalfHour()), agenda: '', headedBy: '', expected: expectedDefault(), controls: { ...S.settings.controls } };
+  return { demo: !!demo, when: toLocalInput(nextHalfHour()), agenda: AGENDA_DEFAULT, headedBy: defaultHead(), expected: expectedDefault(), controls: { ...S.settings.controls } };
 }
+const headLabel = p => `${pretty(p.name)}, ${p.designation.replace(' - HCM', '')}`;
 function headPicks() {
   const ro = S.units.find(u => u.isRO); if (!ro) return [];
-  return ro.staff.filter(p => /Regional Head|Chief Manager/i.test(p.designation)).map(p => `${pretty(p.name)}, ${p.designation.replace(' - HCM', '')}`);
+  return ro.staff.filter(p => /Regional Head|Chief Manager/i.test(p.designation)).map(headLabel);
+}
+/* Default "Headed by": whoever the staff list names as Regional Head, so it follows any region's file. */
+function defaultHead() {
+  const ro = S.units.find(u => u.isRO); if (!ro) return '';
+  const rh = ro.staff.find(p => /Regional Head/i.test(p.designation));
+  return rh ? headLabel(rh) : '';
+}
+/* Agenda quick picks: tap to add or remove; several can be combined. */
+const AGENDA_PRESETS = ['Month Progress', 'SMA Review', 'CASA Review', 'Portfolio Review', 'Non-Core Parameters Review', 'Ongoing Campaign Review'];
+const AGENDA_DEFAULT = 'Month Progress';
+const agendaParts = t => (t || '').split(/\s*[,;\n]\s*/).map(x => x.trim()).filter(Boolean);
+function toggleAgenda(text, item) {
+  const parts = agendaParts(text), i = parts.findIndex(x => x.toLowerCase() === item.toLowerCase());
+  if (i >= 0) parts.splice(i, 1); else parts.push(item);
+  return parts.join(', ');
+}
+function agendaPicks(text, scope) {
+  const on = new Set(agendaParts(text).map(x => x.toLowerCase()));
+  return `<div class="picks wrap" data-agenda-picks="${scope}">${AGENDA_PRESETS.map(a => `<button type="button" class="pick" aria-pressed="${on.has(a.toLowerCase())}" data-act="agenda-toggle" data-scope="${scope}" data-v="${esc(a)}">${esc(a)}</button>`).join('')}</div>`;
+}
+function syncAgendaPicks(scope, text) {
+  const on = new Set(agendaParts(text).map(x => x.toLowerCase()));
+  $$(`[data-agenda-picks="${scope}"] .pick`).forEach(b => b.setAttribute('aria-pressed', on.has(b.dataset.v.toLowerCase())));
 }
 function seg(name, value, opts) {
   return `<div class="seg" role="group">${opts.map(([v, l]) => `<button type="button" aria-pressed="${v === value}" data-act="draft-set" data-k="${name}" data-v="${v}">${esc(l)}</button>`).join('')}</div>`;
@@ -152,14 +176,16 @@ function viewCreate() {
   const d = U.draft;
   renderTop(d.demo ? 'Demo meeting' : 'New meeting', { back: true });
   const c = d.controls;
-  const agendas = (S.recentAgendas || []).slice(0, 6);
+  const preset = new Set(AGENDA_PRESETS.map(a => a.toLowerCase()));
+  const agendas = (S.recentAgendas || []).filter(a => !agendaParts(a).every(x => preset.has(x.toLowerCase()))).slice(0, 3);
   const exp = d.expected.length;
   const roIn = d.expected.some(code => unitByCode.get(code)?.isRO);
   return `
   <form id="create-form" class="card pad" style="display:flex;flex-direction:column;gap:16px" autocomplete="off">
     ${d.demo ? `<div class="banner info">${I.play}<div>A demo meeting simulates branches joining every few seconds, so you can practise tagging. Nothing is sent to Google.</div></div>` : ''}
     <div class="when-row"><span class="flabel">Time of VC</span><label class="when-pill">${I.clock}<span class="when-txt">${esc(whenPill(d.when))}</span><input type="datetime-local" id="f-when" value="${esc(d.when)}" data-draft="when" aria-label="Time of VC" required></label></div>
-    <div class="field"><label for="f-agenda">Agenda</label><textarea class="input" id="f-agenda" data-draft="agenda" rows="2" placeholder="e.g. Q2 RAC review and NPA recovery targets">${esc(d.agenda)}</textarea>
+    <div class="field"><label for="f-agenda">Agenda</label><textarea class="input" id="f-agenda" data-draft="agenda" rows="2" placeholder="Tap below or type your own">${esc(d.agenda)}</textarea>
+      ${agendaPicks(d.agenda, 'draft')}
       ${agendas.length ? `<div class="picks">${agendas.map(a => `<button type="button" class="pick" data-act="draft-pick" data-k="agenda" data-v="${esc(a)}">${esc(a.length > 34 ? a.slice(0, 32) + '…' : a)}</button>`).join('')}</div>` : ''}</div>
     <div class="field"><label for="f-head">Headed by</label><input class="input" id="f-head" data-draft="headedBy" value="${esc(d.headedBy)}" placeholder="Name and designation">
       <div class="picks">${headPicks().map(h => `<button type="button" class="pick" aria-pressed="${h === d.headedBy}" data-act="draft-pick" data-k="headedBy" data-v="${esc(h)}">${esc(h)}</button>`).join('')}</div></div>
@@ -213,7 +239,8 @@ function viewShare() {
       </div></div>
     ${s.controlsNote ? `<div class="banner warn">${I.alert}<div>${esc(s.controlsNote)}</div></div>` : ''}
     <div class="when-row"><span class="flabel">Time of VC</span><label class="when-pill">${I.clock}<span class="when-txt" id="m-when-txt">${esc(whenPill(d.when))}</span><input type="datetime-local" id="m-when" data-det="when" aria-label="Time of VC" value="${esc(d.when ? toLocalInput(new Date(d.when)) : '')}"></label></div>
-    <div class="field"><label for="m-agenda">Agenda</label><textarea class="input" id="m-agenda" rows="2" data-det="agenda" placeholder="e.g. Q2 RAC review and NPA recovery targets">${esc(d.agenda)}</textarea></div>
+    <div class="field"><label for="m-agenda">Agenda</label><textarea class="input" id="m-agenda" rows="2" data-det="agenda" placeholder="Tap below or type your own">${esc(d.agenda)}</textarea>
+      ${agendaPicks(d.agenda, 'det')}</div>
     <div class="field"><label for="m-head">Headed by</label><input class="input" id="m-head" data-det="headedBy" value="${esc(d.headedBy)}" placeholder="Name and designation">
       <div class="picks" id="m-head-picks">${headPicks().map(h => `<button type="button" class="pick" aria-pressed="${h === d.headedBy}" data-act="det-pick" data-v="${esc(h)}">${esc(h)}</button>`).join('')}</div></div>
   </section>

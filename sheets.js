@@ -309,7 +309,7 @@ function openAttach() {
     try {
       const space = await G.call('spaces/' + code, { interactive: true });
       if (!S.lastMeet || S.lastMeet.code !== (space.meetingCode || code)) S.lastMeet = { code: space.meetingCode || code, at: now(), how: 'entered' };
-      S.session = newSession({ source: 'google', attached: true, spaceName: space.name, meetingUri: space.meetingUri, meetingCode: space.meetingCode || code, details: { when: '', agenda: $('#a-agenda').value.trim(), headedBy: '' } });
+      S.session = newSession({ source: 'google', attached: true, spaceName: space.name, meetingUri: space.meetingUri, meetingCode: space.meetingCode || code, details: { when: '', agenda: $('#a-agenda').value.trim(), headedBy: defaultHead() } });
       save(); closeSheet(); U.boardTab = 'miss'; setTab('meet'); syncNow();
     } catch (err) {
       btn.disabled = false; btn.innerHTML = I.link + 'Start tracking';
@@ -551,6 +551,12 @@ const ACT = {
   create: () => doCreate(),
   'share-native': () => { const t = shareText(S.session); if (navigator.share) navigator.share({ text: t }).catch(() => {}); else copyText(t, 'Message copied. Paste it in any app.'); },
   'copy-share': () => copyText(shareText(S.session), 'Message copied'),
+  'agenda-toggle': el => {
+    const det = el.dataset.scope === 'det', inp = $(det ? '#m-agenda' : '#f-agenda'); if (!inp) return;
+    inp.value = toggleAgenda(inp.value, el.dataset.v);
+    if (det) onDetail(inp); else U.draft.agenda = inp.value;
+    syncAgendaPicks(el.dataset.scope, inp.value);
+  },
   'det-pick': el => { const inp = $('#m-head'); if (!inp) return; inp.value = el.dataset.v; onDetail(inp); },
   'to-board': () => { leaveRoute(); U.tab = 'meet'; render(); window.scrollTo(0, 0); },
   'go-share': () => go({ name: 'share' }),
@@ -626,6 +632,8 @@ $$('.tab').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab))
 document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.draft && U.draft) U.draft[t.dataset.draft] = t.value;
+  if (t.dataset.draft === 'agenda') syncAgendaPicks('draft', t.value);
+  if (t.dataset.det === 'agenda') syncAgendaPicks('det', t.value);
   if (t.dataset.det && t.dataset.det !== 'when') onDetail(t);
   if (t.id === 'dir-q') { U.dirQ = t.value; $('#dir-list').innerHTML = dirList(); }
   if (t.dataset.setting === 'clientId') { S.settings.clientId = cleanClientId(t.value) || t.value.trim(); save(); const b = $('[data-act="signin"]'); if (b) b.disabled = !S.settings.clientId; }
