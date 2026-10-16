@@ -297,7 +297,8 @@ async function liveStartShare() {
 }
 function liveShareText() {
   const s = S.session, d = s.details;
-  return ['*Live VC attendance – RO Udaipur*', d.when ? '🕚 ' + fmtWhen(d.when) : '', 'See who has joined and help call the rest:', liveLink(s.live)].filter(Boolean).join('\n');
+  return ['*Video Conference – RO Udaipur*', d.when ? '🕚 ' + fmtWhen(d.when) : '', d.headedBy ? '👤 Headed by: ' + d.headedBy : '', d.agenda ? '📋 Agenda: ' + d.agenda : '',
+    s.meetingUri ? '🔗 Join: ' + s.meetingUri : '', '', '📊 *Live attendance*: see who has joined and help call the rest', liveLink(s.live)].filter((x, i, a) => x || (i && a[i - 1])).join('\n');
 }
 function liveSendLink() {
   const t = liveShareText();
